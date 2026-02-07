@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PorterDash</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Main Menu Overlay -->
+    <div id="menu-overlay" class="overlay">
+      <div id="menu-content">
+        <h1 id="game-title">PORTERDASH</h1>
+        <div id="menu-buttons">
+          <button class="menu-btn" id="play-btn">PLAY</button>
+          <button class="menu-btn" id="levels-btn">LEVELS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Level Select Overlay -->
+    <div id="level-overlay" class="overlay hidden">
+      <div id="level-content">
+        <h2>SELECT LEVEL</h2>
+        <div id="level-grid"></div>
+        <button class="menu-btn" id="back-btn">BACK</button>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="progress-bar-container">
+        <div id="progress-bar"></div>
+        <span id="progress-text">0%</span>
+      </div>
+      <div id="level-label"></div>
+      <button id="pause-btn">II</button>
+    </div>
+
+    <!-- Death Overlay -->
+    <div id="death-overlay" class="overlay hidden">
+      <div id="death-content">
+        <h2 id="death-title">CRASHED!</h2>
+        <p id="death-progress"></p>
+        <div id="death-buttons">
+          <button class="menu-btn" id="retry-btn">RETRY</button>
+          <button class="menu-btn" id="menu-return-btn">MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Level Complete Overlay -->
+    <div id="complete-overlay" class="overlay hidden">
+      <div id="complete-content">
+        <h2>LEVEL COMPLETE!</h2>
+        <p id="complete-stars"></p>
+        <div id="complete-buttons">
+          <button class="menu-btn" id="next-btn">NEXT LEVEL</button>
+          <button class="menu-btn" id="complete-menu-btn">MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pause Overlay -->
+    <div id="pause-overlay" class="overlay hidden">
+      <div id="pause-content">
+        <h2>PAUSED</h2>
+        <div id="pause-buttons">
+          <button class="menu-btn" id="resume-btn">RESUME</button>
+          <button class="menu-btn" id="pause-retry-btn">RETRY</button>
+          <button class="menu-btn" id="pause-menu-btn">MENU</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/levels.js"></script>
+  <script src="js/backgrounds.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/menu.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
