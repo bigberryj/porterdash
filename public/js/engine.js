@@ -11,8 +11,8 @@ class GameEngine {
 
     // Game constants
     this.BLOCK_SIZE = 40; // Base unit size (1 beat)
-    this.GRAVITY = 0.65;
-    this.JUMP_FORCE = -12.5;
+    this.GRAVITY = 1.1;
+    this.JUMP_FORCE = -14;
     this.GROUND_HEIGHT_RATIO = 0.18; // Ground height from bottom
 
     // State
@@ -75,6 +75,10 @@ class GameEngine {
     this.screenShake = 0;
 
     // Setup player
+    // Calculate lead beats: ~5 seconds of empty space before first obstacle
+    // Formula: 5 seconds * 60fps * speed / BLOCK_SIZE
+    this.leadBeats = Math.ceil(5 * 60 * this.speed / this.BLOCK_SIZE);
+
     this.player.x = this.displayWidth * 0.15;
     this.player.y = this.groundY - this.player.height;
     this.player.vy = 0;
@@ -95,7 +99,7 @@ class GameEngine {
     const bs = this.BLOCK_SIZE;
 
     for (const ob of this.level.obstacles) {
-      const baseX = ob.x * bs;
+      const baseX = (ob.x + this.leadBeats) * bs;
       const w = (ob.w || 1) * bs;
       const h = (ob.h || 1) * bs;
 
@@ -190,7 +194,7 @@ class GameEngine {
 
   getProgress() {
     if (!this.level) return 0;
-    const totalPx = this.level.totalBeats * this.BLOCK_SIZE;
+    const totalPx = (this.level.totalBeats + this.leadBeats) * this.BLOCK_SIZE;
     return Math.min(1, this.scrollX / totalPx);
   }
 
@@ -226,19 +230,23 @@ class GameEngine {
     p.vy += this.GRAVITY;
     p.y += p.vy;
 
+    // Reset onGround - will be re-set by ground check or block collision
+    const wasOnGround = p.onGround;
+    p.onGround = false;
+
     // Ground collision
     if (p.y + p.height >= this.groundY) {
       p.y = this.groundY - p.height;
       p.vy = 0;
-      if (!p.onGround) {
+      if (!wasOnGround) {
         this.spawnGroundParticles(p.x + p.width / 2, this.groundY, 3);
       }
       p.onGround = true;
     }
 
-    // Rotation (spins when in air)
+    // Rotation (spins when in air, ~90deg per jump arc)
     if (!p.onGround) {
-      p.rotation += 0.08;
+      p.rotation += 0.12;
     } else {
       // Snap to nearest 90 degrees
       p.rotation = Math.round(p.rotation / (Math.PI / 2)) * (Math.PI / 2);
@@ -265,10 +273,14 @@ class GameEngine {
   checkCollisions() {
     const p = this.player;
     // Player hitbox (slightly smaller for fairness)
-    const px = p.x + 4;
-    const py = p.y + 4;
-    const pw = p.width - 8;
-    const ph = p.height - 8;
+    const margin = 5;
+    const px = p.x + margin;
+    const py = p.y + margin;
+    const pw = p.width - margin * 2;
+    const ph = p.height - margin * 2;
+
+    // Previous frame bottom edge (used to detect top-landings)
+    const prevBottom = py - p.vy;
 
     for (const ob of this.obstacles) {
       // Transform obstacle x to screen space
@@ -285,33 +297,34 @@ class GameEngine {
         continue;
       }
 
-      // AABB collision
+      // AABB collision check
       if (px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
         if (ob.deadly) {
-          this.die();
-          return;
+          // For spikes, use a tighter inner hitbox (triangle approximation)
+          const spikeMargin = ob.w * 0.2;
+          const spikePx = px;
+          const spikePy = py;
+          if (spikePx + pw > ox + spikeMargin && spikePx < ox + ob.w - spikeMargin &&
+              spikePy + ph > ob.y + ob.h * 0.35) {
+            this.die();
+            return;
+          }
         } else {
-          // Block collision - determine side
-          const overlapLeft = (px + pw) - ox;
-          const overlapRight = (ox + ob.w) - px;
-          const overlapTop = (py + ph) - ob.y;
-          const overlapBottom = (ob.y + ob.h) - py;
-
-          const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-
-          if (minOverlap === overlapTop && p.vy >= 0) {
-            // Land on top
+          // Block collision - use previous position to determine landing vs wall hit
+          // If the player's bottom was at or above the block's top last frame, they're landing on it
+          if (prevBottom <= ob.y + 6 && p.vy >= 0) {
+            // Landing on top of block
             p.y = ob.y - p.height;
             p.vy = 0;
             p.onGround = true;
-          } else if (minOverlap === overlapLeft) {
-            // Hit from left side - die (running into wall)
+          } else if (p.vy < 0 && py < ob.y + ob.h && py + ph > ob.y + ob.h - 6) {
+            // Hit head on bottom of block
+            p.vy = 0;
+            p.y = ob.y + ob.h - margin;
+          } else {
+            // Running into the side of a block -> death
             this.die();
             return;
-          } else if (minOverlap === overlapBottom && p.vy < 0) {
-            // Hit from bottom
-            p.vy = 0;
-            p.y = ob.y + ob.h;
           }
         }
       }
