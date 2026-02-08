@@ -1,6 +1,6 @@
 /**
  * PorterDash Main Game Controller
- * Ties together engine, menu, and input handling
+ * Ties together engine, menu, sound, and input handling
  */
 
 (function () {
@@ -8,16 +8,22 @@
   const engine = new GameEngine(canvas);
   const menu = new MenuSystem();
 
-  let currentScreen = 'menu'; // menu, levels, playing, dead, complete, paused
+  let currentScreen = 'menu';
   let currentLevel = 0;
   let demoScroll = 0;
   let demoHue = 0;
-  let animFrame = null;
+
+  // ---- Sound init on first interaction ----
+  function initSound() {
+    sound.init();
+    sound.resume();
+  }
 
   // ---- Input Handling ----
 
   function onInputDown(e) {
     if (e) e.preventDefault();
+    initSound();
 
     if (currentScreen === 'playing') {
       engine.handleInput('down');
@@ -33,20 +39,22 @@
   // Keyboard
   document.addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    initSound();
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       onInputDown(e);
     }
     if (e.code === 'Escape') {
-      if (currentScreen === 'playing') {
-        pauseGame();
-      } else if (currentScreen === 'paused') {
-        resumeGame();
-      }
+      if (currentScreen === 'playing') pauseGame();
+      else if (currentScreen === 'paused') resumeGame();
     }
     if (e.code === 'KeyR') {
       if (currentScreen === 'playing' || currentScreen === 'dead' || currentScreen === 'paused') {
         retryLevel();
       }
+    }
+    if (e.code === 'KeyM') {
+      const on = sound.toggleMusic();
+      updateSoundButton();
     }
   });
 
@@ -71,22 +79,37 @@
     }
   });
 
+  // ---- Sound Toggle Button ----
+  const soundBtn = document.getElementById('sound-btn');
+  if (soundBtn) {
+    soundBtn.addEventListener('click', () => {
+      initSound();
+      sound.toggleSound();
+      updateSoundButton();
+    });
+  }
+
+  function updateSoundButton() {
+    if (soundBtn) {
+      soundBtn.textContent = sound.enabled ? '\u266A' : '\u2716';
+      soundBtn.title = sound.enabled ? 'Sound ON (click to mute)' : 'Sound OFF (click to unmute)';
+    }
+  }
+
   // ---- Menu Button Handlers ----
 
   document.getElementById('play-btn').addEventListener('click', () => {
-    // Find first unlocked unfinished level, or first unlocked
+    initSound();
     let target = 0;
     for (let i = 0; i < LEVELS.length; i++) {
-      if (menu.isLevelUnlocked(i) && !menu.progress.completed[i]) {
-        target = i;
-        break;
-      }
-      if (menu.isLevelUnlocked(i)) target = i;
+      if (!menu.progress.completed[i]) { target = i; break; }
+      target = i;
     }
     startLevel(target);
   });
 
   document.getElementById('levels-btn').addEventListener('click', () => {
+    initSound();
     currentScreen = 'levels';
     menu.showLevels();
   });
@@ -96,31 +119,24 @@
     menu.showMenu();
   });
 
-  // Level grid click
   document.getElementById('level-grid').addEventListener('click', (e) => {
+    initSound();
     const btn = e.target.closest('.level-btn');
     if (!btn) return;
     const idx = parseInt(btn.dataset.level);
-    if (!menu.isLevelUnlocked(idx)) return;
     startLevel(idx);
   });
 
-  // Death buttons
   document.getElementById('retry-btn').addEventListener('click', retryLevel);
   document.getElementById('menu-return-btn').addEventListener('click', returnToMenu);
 
-  // Complete buttons
   document.getElementById('next-btn').addEventListener('click', () => {
     const next = currentLevel + 1;
-    if (next < LEVELS.length) {
-      startLevel(next);
-    } else {
-      returnToMenu();
-    }
+    if (next < LEVELS.length) startLevel(next);
+    else returnToMenu();
   });
   document.getElementById('complete-menu-btn').addEventListener('click', returnToMenu);
 
-  // Pause buttons
   document.getElementById('pause-btn').addEventListener('click', pauseGame);
   document.getElementById('resume-btn').addEventListener('click', resumeGame);
   document.getElementById('pause-retry-btn').addEventListener('click', () => {
@@ -139,6 +155,7 @@
     currentScreen = 'playing';
     engine.loadLevel(index);
     menu.showGame(index);
+    sound.startMusic(LEVELS[index].speed);
   }
 
   function retryLevel() {
@@ -150,26 +167,28 @@
     if (currentScreen !== 'playing') return;
     currentScreen = 'paused';
     menu.showPause();
+    sound.stopMusic();
   }
 
   function resumeGame() {
     currentScreen = 'playing';
     menu.hidePause();
+    sound.startMusic(LEVELS[currentLevel].speed);
   }
 
   function returnToMenu() {
     currentScreen = 'menu';
     engine.state = 'idle';
     menu.showMenu();
+    sound.stopMusic();
   }
 
   // ---- Main Loop ----
 
   function gameLoop() {
-    animFrame = requestAnimationFrame(gameLoop);
+    requestAnimationFrame(gameLoop);
 
     if (currentScreen === 'menu' || currentScreen === 'levels') {
-      // Demo background
       demoScroll += 3;
       demoHue = (demoHue + 0.3) % 360;
       engine.drawDemo(demoScroll, demoHue);
@@ -178,7 +197,6 @@
       engine.draw();
       menu.updateHUD(engine.getProgress());
 
-      // Check state transitions
       if (engine.state === 'dead') {
         currentScreen = 'dead';
         menu.showDeath(engine.deathProgress);
@@ -188,10 +206,8 @@
         menu.showComplete(currentLevel);
       }
     } else if (currentScreen === 'paused') {
-      // Still draw but don't update
       engine.draw();
     } else if (currentScreen === 'dead' || currentScreen === 'complete') {
-      // Keep drawing (with effects fading)
       engine.updateEffects();
       engine.draw();
     }
@@ -199,5 +215,6 @@
 
   // ---- Init ----
   menu.showMenu();
+  updateSoundButton();
   gameLoop();
 })();
