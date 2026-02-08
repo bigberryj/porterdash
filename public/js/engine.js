@@ -92,7 +92,7 @@ class GameEngine {
     this.player.hasDoubleJumped = false;
 
     this.buildObstacles();
-    this.bg.init(this.level.colors, this.level.bgCreatures);
+    this.bg.init(this.level.colors, this.level.bgCreatures, this.level.bgTheme);
   }
 
   buildObstacles() {

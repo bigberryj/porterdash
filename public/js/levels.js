@@ -52,6 +52,7 @@ LEVELS.push({
     bgShapes: '#440000',
     gridLines: 'rgba(255, 50, 50, 0.08)',
   },
+  bgTheme: 'mountains',
   bgCreatures: ['bat', 'fireball'],
   obstacles: [
     { type: 'spike', x: 12 },
@@ -107,6 +108,7 @@ LEVELS.push({
     bgShapes: '#003300',
     gridLines: 'rgba(0, 255, 50, 0.08)',
   },
+  bgTheme: 'mountains',
   bgCreatures: ['ghost', 'wisp'],
   obstacles: [
     { type: 'spike', x: 10 },
@@ -168,6 +170,7 @@ LEVELS.push({
     bgShapes: '#001833',
     gridLines: 'rgba(0, 200, 255, 0.08)',
   },
+  bgTheme: 'city',
   bgCreatures: ['jellyfish', 'drone'],
   obstacles: [
     { type: 'spike', x: 8 },
@@ -228,6 +231,7 @@ LEVELS.push({
     bgShapes: '#330022',
     gridLines: 'rgba(255, 0, 200, 0.08)',
   },
+  bgTheme: 'city',
   bgCreatures: ['skull', 'bat'],
   obstacles: [
     { type: 'double_spike', x: 8 },
@@ -290,6 +294,7 @@ LEVELS.push({
     bgShapes: '#220044',
     gridLines: 'rgba(150, 50, 255, 0.08)',
   },
+  bgTheme: 'space',
   bgCreatures: ['ghost', 'skull'],
   obstacles: [
     { type: 'triple_spike', x: 8 },
@@ -352,6 +357,7 @@ LEVELS.push({
     bgShapes: '#332200',
     gridLines: 'rgba(255, 136, 0, 0.08)',
   },
+  bgTheme: 'flash',
   bgCreatures: ['fireball', 'drone'],
   obstacles: [
     { type: 'spike', x: 7 },
@@ -416,6 +422,7 @@ LEVELS.push({
     bgShapes: '#0a2233',
     gridLines: 'rgba(100, 220, 255, 0.08)',
   },
+  bgTheme: 'cave',
   bgCreatures: ['jellyfish', 'wisp'],
   obstacles: [
     { type: 'double_spike', x: 6 },
@@ -481,6 +488,7 @@ LEVELS.push({
     bgShapes: '#2a0008',
     gridLines: 'rgba(200, 0, 50, 0.08)',
   },
+  bgTheme: 'cave',
   bgCreatures: ['skull', 'fireball'],
   obstacles: [
     { type: 'triple_spike', x: 6 },
@@ -548,6 +556,7 @@ LEVELS.push({
     bgShapes: '#1a3300',
     gridLines: 'rgba(170, 255, 0, 0.08)',
   },
+  bgTheme: 'cave',
   bgCreatures: ['ghost', 'drone'],
   obstacles: [
     { type: 'triple_spike', x: 5 },
@@ -619,6 +628,7 @@ LEVELS.push({
     gridLines: 'rgba(255, 0, 255, 0.08)',
   },
   rainbow: true, // special: colors shift over time
+  bgTheme: 'chaos',
   bgCreatures: ['skull', 'bat', 'fireball', 'ghost'],
   obstacles: [
     { type: 'triple_spike', x: 5 },

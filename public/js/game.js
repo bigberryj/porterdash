@@ -155,7 +155,7 @@
     currentScreen = 'playing';
     engine.loadLevel(index);
     menu.showGame(index);
-    sound.startMusic(LEVELS[index].speed);
+    sound.startMusic(LEVELS[index].speed, index);
   }
 
   function retryLevel() {
@@ -173,7 +173,7 @@
   function resumeGame() {
     currentScreen = 'playing';
     menu.hidePause();
-    sound.startMusic(LEVELS[currentLevel].speed);
+    sound.startMusic(LEVELS[currentLevel].speed, currentLevel);
   }
 
   function returnToMenu() {
