@@ -188,17 +188,29 @@ class BackgroundSystem {
 
   initDriftingClouds(w, h) {
     for (let i = 0; i < 8; i++) {
+      const baseW = 90 + Math.random() * 140;
+      const baseH = 35 + Math.random() * 45;
+      const puffs = [];
+      const puffCount = 5 + Math.floor(Math.random() * 4);
+      for (let p = 0; p < puffCount; p++) {
+        puffs.push({
+          dx: (Math.random() - 0.5) * baseW * 0.9,
+          dy: (Math.random() - 0.5) * baseH * 1.2,
+          r: baseW * (0.2 + Math.random() * 0.25),
+        });
+      }
       this.driftingClouds.push({
         x: Math.random() * w * 1.5,
-        y: h * (0.1 + Math.random() * 0.5),
-        w: 100 + Math.random() * 180,
-        h: 30 + Math.random() * 50,
-        speed: 0.15 + Math.random() * 0.25,
+        y: h * (0.12 + Math.random() * 0.48),
+        w: baseW,
+        h: baseH,
+        puffs,
+        speed: 0.12 + Math.random() * 0.2,
         wobble: Math.random() * Math.PI * 2,
-        wobbleSpeed: 0.01 + Math.random() * 0.02,
-        wobbleAmp: 8 + Math.random() * 15,
+        wobbleSpeed: 0.008 + Math.random() * 0.015,
+        wobbleAmp: 5 + Math.random() * 12,
         phase: Math.random() * Math.PI * 2,
-        opacity: 0.08 + Math.random() * 0.1,
+        opacity: 0.12 + Math.random() * 0.1,
       });
     }
   }
@@ -599,6 +611,9 @@ class BackgroundSystem {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // Wallpaper layer (rich backdrop under all animations - sky, horizon, silhouettes)
+    this.drawWallpaper(rainbowHue);
+
     // Cave ceiling overlay
     if (this.bgTheme === 'cave' || this.bgTheme === 'chaos') {
       this.drawCaveCeiling(rainbowHue);
@@ -652,9 +667,6 @@ class BackgroundSystem {
     // Flowing horizon lines (energy / lava feel - foreground movement)
     this.drawFlowLines(rainbowHue);
 
-    // Flowing horizon lines (energy / lava feel - foreground movement)
-    this.drawFlowLines(rainbowHue);
-
     // Bottom zig-zag wave layer (parallax waves near bottom)
     this.drawBottomWaves(rainbowHue);
 
@@ -677,6 +689,119 @@ class BackgroundSystem {
       ctx.fillStyle = flashColor;
       ctx.fillRect(0, 0, w, h);
     }
+  }
+
+  // ==================== WALLPAPER (static backdrop under all layers) ====================
+
+  drawWallpaper(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const colors = this.colors;
+    const scrollX = this.scrollX || 0;
+    const theme = this.bgTheme;
+
+    // 1) Richer sky gradient overlay (adds depth - horizon glow)
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+    if (rainbowHue !== undefined) {
+      skyGrad.addColorStop(0, `hsla(${rainbowHue}, 70%, 8%, 0.4)`);
+      skyGrad.addColorStop(0.5, 'transparent');
+      skyGrad.addColorStop(0.85, `hsla(${rainbowHue + 20}, 60%, 15%, 0.5)`);
+      skyGrad.addColorStop(1, `hsla(${rainbowHue + 10}, 50%, 10%, 0.7)`);
+    } else {
+      const c1 = colors.bg1 || '#0a0a12';
+      const c2 = colors.bg2 || '#1a1a2e';
+      skyGrad.addColorStop(0, this.hexToRgba(c1, 0.5));
+      skyGrad.addColorStop(0.45, 'transparent');
+      skyGrad.addColorStop(0.8, this.hexToRgba(c2, 0.4));
+      skyGrad.addColorStop(1, this.hexToRgba(c2, 0.85));
+    }
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 2) Horizon band (distant land/water - soft strip)
+    const horizonY = h * 0.72;
+    const bandH = h * 0.35;
+    const bandGrad = ctx.createLinearGradient(0, horizonY, 0, h);
+    const bandColor = rainbowHue !== undefined
+      ? `hsla(${rainbowHue + 30}, 40%, 8%, 0.6)`
+      : colors.bg2 ? this.hexToRgba(colors.bg2, 0.6) : 'rgba(15, 15, 25, 0.6)';
+    bandGrad.addColorStop(0, 'transparent');
+    bandGrad.addColorStop(0.15, bandColor);
+    bandGrad.addColorStop(1, bandColor);
+    ctx.fillStyle = bandGrad;
+    ctx.fillRect(0, horizonY, w, bandH);
+
+    // 3) Distant silhouettes (theme-based, very slow parallax)
+    const parallax = scrollX * 0.015;
+    ctx.globalAlpha = 0.18;
+
+    if (theme === 'mountains' || theme === 'default' || !theme) {
+      this.drawWallpaperSilhouetteMountains(ctx, w, h, horizonY, parallax, rainbowHue);
+    } else if (theme === 'space') {
+      this.drawWallpaperSilhouetteSpace(ctx, w, h, rainbowHue);
+    } else if (theme === 'city') {
+      this.drawWallpaperSilhouetteCity(ctx, w, h, horizonY, parallax, rainbowHue);
+    } else {
+      this.drawWallpaperSilhouetteMountains(ctx, w, h, horizonY, parallax, rainbowHue);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  drawWallpaperSilhouetteMountains(ctx, w, h, horizonY, parallax, rainbowHue) {
+    const color = rainbowHue !== undefined
+      ? `hsl(${rainbowHue + 200}, 30%, 5%)`
+      : this.colors.bg2 ? this.hexToRgba(this.colors.bg2, 0.9) : 'rgba(10, 10, 20, 0.9)';
+    ctx.fillStyle = color;
+
+    const peakHeight = h * 0.25;
+    for (let layer = 0; layer < 2; layer++) {
+      ctx.beginPath();
+      ctx.moveTo(-50, h + 20);
+      const L = 14 + layer * 6;
+      for (let i = 0; i <= L; i++) {
+        const x = (i / L) * (w + 200) - 100 + parallax * (1 + layer * 0.5);
+        const y = horizonY - Math.abs(Math.sin((i / L) * 4 + layer * 2)) * peakHeight * (0.4 + layer * 0.3) - Math.sin((x + parallax) * 0.008) * 15;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w + 50, h + 20);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  drawWallpaperSilhouetteSpace(ctx, w, h, rainbowHue) {
+    const color = rainbowHue !== undefined
+      ? `hsla(${rainbowHue + 180}, 50%, 12%, 0.35)`
+      : this.colors.accent1 ? this.hexToRgba(this.colors.accent1, 0.12) : 'rgba(80, 100, 180, 0.12)';
+    const cy = h * 0.4;
+    const r = w * 0.65;
+    const grad = ctx.createRadialGradient(w * 0.5, cy, 0, w * 0.5, cy, r);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.5, color.startsWith('hsl') ? color.replace(/[\d.]+\)$/, '0.1)') : this.hexToRgba(this.colors.accent1 || '#4488ff', 0.06));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  drawWallpaperSilhouetteCity(ctx, w, h, horizonY, parallax, rainbowHue) {
+    const color = rainbowHue !== undefined
+      ? `hsl(${rainbowHue + 220}, 25%, 6%)`
+      : this.colors.bg2 ? this.hexToRgba(this.colors.bg2, 0.85) : 'rgba(8, 8, 18, 0.85)';
+    ctx.fillStyle = color;
+    const blockW = 40;
+    const startX = -((parallax * 2) % blockW) - blockW * 2;
+    ctx.beginPath();
+    ctx.moveTo(-50, h + 20);
+    for (let x = startX; x < w + 100; x += blockW) {
+      const towerH = 30 + (Math.sin(x * 0.02) * 0.5 + 0.5) * 80;
+      ctx.lineTo(x, horizonY - towerH);
+      ctx.lineTo(x + blockW * 0.7, horizonY - towerH * 0.6);
+    }
+    ctx.lineTo(w + 50, h + 20);
+    ctx.closePath();
+    ctx.fill();
   }
 
   // ==================== GRID ====================
@@ -797,7 +922,7 @@ class BackgroundSystem {
     }
   }
 
-  // ==================== DRIFTING CLOUDS ====================
+  // ==================== DRIFTING CLOUDS (fluffy, cloud-like) ====================
 
   drawDriftingClouds(rainbowHue) {
     const ctx = this.ctx;
@@ -808,23 +933,56 @@ class BackgroundSystem {
       if (c.x + c.w < 0 || c.x > w) continue;
 
       const yOff = Math.sin(c.wobble) * c.wobbleAmp;
-      const y = c.y + yOff;
-      const opacity = c.opacity * (0.8 + Math.sin(c.phase) * 0.2);
+      const baseY = c.y + yOff;
+      const opacity = c.opacity * (0.85 + Math.sin(c.phase) * 0.15);
 
-      const color = rainbowHue !== undefined
-        ? `hsla(${rainbowHue + 30}, 50%, 70%, ${opacity})`
-        : this.colors.bgShapes ? this.hexToRgba(this.colors.bgShapes, opacity) : `rgba(80, 90, 120, ${opacity})`;
+      const baseColor = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 30}, 35%, 92%, ${opacity})`
+        : this.colors.bgShapes
+          ? this.hexToRgba(this.colors.bgShapes, Math.min(1, opacity * 1.2))
+          : `rgba(200, 210, 230, ${opacity})`;
 
-      ctx.fillStyle = color;
+      const edgeColor = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 25}, 25%, 88%, 0)`
+        : 'rgba(220, 225, 240, 0)';
+
       ctx.globalAlpha = 1;
 
       const cx = c.x + c.w / 2;
-      const cy = y + c.h / 2;
-      ctx.beginPath();
-      ctx.ellipse(cx - c.w * 0.15, cy, c.w * 0.35, c.h * 0.9, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx, cy - c.h * 0.1, c.w * 0.4, c.h, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + c.w * 0.2, cy, c.w * 0.35, c.h * 0.85, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const cy = baseY + c.h / 2;
+
+      for (const puff of c.puffs || []) {
+        const px = cx + puff.dx;
+        const py = cy + puff.dy;
+        const r = puff.r;
+
+        const grad = ctx.createRadialGradient(px - r * 0.3, py - r * 0.2, 0, px, py, r);
+        grad.addColorStop(0, baseColor);
+        grad.addColorStop(0.5, baseColor);
+        grad.addColorStop(0.85, edgeColor);
+        grad.addColorStop(1, 'transparent');
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.shadowColor = 'rgba(255,255,255,0.4)';
+      ctx.shadowBlur = 12;
+      for (const puff of c.puffs || []) {
+        const px = cx + puff.dx;
+        const py = cy + puff.dy;
+        const r = puff.r * 0.7;
+        const softColor = rainbowHue !== undefined
+          ? `hsla(${rainbowHue + 30}, 20%, 98%, ${opacity * 0.5})`
+          : `rgba(245, 248, 255, ${opacity * 0.5})`;
+        ctx.fillStyle = softColor;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
     }
   }
 

@@ -18,9 +18,9 @@ class GameEngine {
 
     // Game constants
     this.BLOCK_SIZE = 40; // Base unit size (1 beat)
-    this.GRAVITY = 1.1;
-    this.JUMP_FORCE = -14;
-    this.DOUBLE_JUMP_FORCE = -12;
+    this.GRAVITY = 0.88;
+    this.JUMP_FORCE = -15.5;
+    this.DOUBLE_JUMP_FORCE = -13.5;
     this.MAX_OBSTACLE_HEIGHT = 2; // blocks - max jump-over height so levels are achievable
     this.GROUND_HEIGHT_RATIO = 0.18;
 
@@ -54,12 +54,14 @@ class GameEngine {
     this.portalEffects = [];
     this.portalTransitionEffect = null;
     this.groundParticles = [];
+    this.playerTrailParticles = [];
     this.screenShake = 0;
     this.doubleJumpFlash = 0;
 
     // Input
     this.jumpPressed = false;
     this.jumpHeld = false;
+    this.jumpBufferFrames = 0;
 
     this.resize();
   }
@@ -87,8 +89,10 @@ class GameEngine {
     this.deathParticles = [];
     this.portalEffects = [];
     this.groundParticles = [];
+    this.playerTrailParticles = [];
     this.screenShake = 0;
     this.doubleJumpFlash = 0;
+    this.jumpBufferFrames = 0;
 
     // Lead-in beats (~5s of scroll before first obstacle)
     this.leadBeats = Math.ceil(5 * 60 * this.speed / this.BLOCK_SIZE);
@@ -526,6 +530,8 @@ class GameEngine {
           this.doubleJumpFlash = 8;
           this.spawnDoubleJumpParticles(p.x + p.width / 2, p.y + p.height / 2);
           sound.playDoubleJump();
+        } else {
+          this.jumpBufferFrames = 6;
         }
       }
       this.jumpPressed = false;
@@ -549,6 +555,13 @@ class GameEngine {
           }
           p.onGround = true;
           p.hasDoubleJumped = false;
+          if (this.jumpBufferFrames > 0) {
+            p.vy = this.JUMP_FORCE;
+            p.onGround = false;
+            this.jumpBufferFrames = 0;
+            this.spawnGroundParticles(p.x + p.width / 2, groundYAt, 5);
+            sound.playJump();
+          }
         }
       }
 
@@ -564,6 +577,27 @@ class GameEngine {
     if (p.trail.length > 15) p.trail.shift();
     for (const t of p.trail) t.age++;
 
+    // Trailing particles (spawn behind cube when moving / flying)
+    if (!p.dead && (p.flightMode || Math.abs(p.vy) > 0.5 || this.speed > 0)) {
+      const rate = p.flightMode ? 2 : 1;
+      if (this.time % rate === 0) {
+        const px = p.x + p.width / 2;
+        const py = p.y + p.height / 2;
+        const backX = px - (p.flightMode ? 18 : 12);
+        this.playerTrailParticles.push({
+          x: backX + (Math.random() - 0.5) * 8,
+          y: py + (Math.random() - 0.5) * 6,
+          vx: -1.2 - Math.random() * 1.5,
+          vy: (Math.random() - 0.5) * 0.8,
+          life: 1,
+          decay: p.flightMode ? 0.028 : 0.035,
+          size: p.flightMode ? 4 + Math.random() * 4 : 2.5 + Math.random() * 3,
+          isFlight: !!p.flightMode,
+        });
+      }
+    }
+    if (this.playerTrailParticles.length > 80) this.playerTrailParticles.splice(0, 20);
+
     // Collision detection
     this.checkCollisions();
 
@@ -571,6 +605,7 @@ class GameEngine {
     this.updateEffects();
     if (this.doubleJumpFlash > 0) this.doubleJumpFlash--;
     if (this.screenShake > 0) this.screenShake *= 0.9;
+    if (this.jumpBufferFrames > 0) this.jumpBufferFrames--;
 
     this.bg.update(this.speed, this.scrollX);
   }
@@ -749,6 +784,11 @@ class GameEngine {
       const p = this.portalEffects[i];
       p.x += p.vx; p.y += p.vy; p.life -= p.decay;
       if (p.life <= 0) this.portalEffects.splice(i, 1);
+    }
+    for (let i = this.playerTrailParticles.length - 1; i >= 0; i--) {
+      const pt = this.playerTrailParticles[i];
+      pt.x += pt.vx; pt.y += pt.vy; pt.life -= pt.decay;
+      if (pt.life <= 0) this.playerTrailParticles.splice(i, 1);
     }
     if (this.portalTransitionEffect) {
       this.portalTransitionEffect.progress++;
@@ -1199,6 +1239,30 @@ class GameEngine {
     const ctx = this.ctx;
     const p = this.player;
     const colors = this.level.colors;
+
+    // Trailing particles (behind cube)
+    for (const pt of this.playerTrailParticles) {
+      if (pt.life <= 0) continue;
+      const alpha = pt.life * 0.7;
+      const color = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 100}, 90%, 65%, ${alpha})`
+        : pt.isFlight
+          ? (colors.accent2 ? this.hexToRgba(colors.accent2, alpha) : `rgba(100,255,150,${alpha})`)
+          : (colors.accent1 ? this.hexToRgba(colors.accent1, alpha) : `rgba(80,220,120,${alpha})`);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      const s = pt.size * pt.life;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, s, 0, Math.PI * 2);
+      ctx.fill();
+      if (pt.isFlight) {
+        ctx.fillStyle = 'rgba(255,255,255,' + alpha * 0.5 + ')';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, s * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
 
     // Trail (longer streaks in flight mode)
     const trailLen = p.flightMode ? 22 : 15;
