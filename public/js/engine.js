@@ -413,13 +413,14 @@ class GameEngine {
     const bs = this.BLOCK_SIZE;
     const worldX = this.scrollX + p.x + p.width / 2;
 
-    // Portal flight trigger: only when first passing through
+    // Portal flight trigger: when player box overlaps portal box (forgiving hitbox)
     for (const ob of this.obstacles) {
       if (ob.type === 'portal_fly' && ob.flightBeats != null && !this.triggeredFlightPortals.has(ob.x)) {
         const ox = ob.x - this.scrollX;
-        const cx = ox + ob.w / 2;
-        if (cx >= p.x + p.width / 2 - 15 && cx <= p.x + p.width / 2 + 15 &&
-            p.y + p.height / 2 >= ob.y && p.y + p.height / 2 <= ob.y + ob.h) {
+        const margin = 25;
+        const overlapX = p.x + p.width + margin > ox && p.x - margin < ox + ob.w;
+        const overlapY = p.y + p.height > ob.y && p.y < ob.y + ob.h;
+        if (overlapX && overlapY) {
           this.triggeredFlightPortals.add(ob.x);
           p.flightMode = true;
           p.flightEndScrollX = this.scrollX + ob.flightBeats * bs;
@@ -434,9 +435,10 @@ class GameEngine {
     for (const ob of this.obstacles) {
       if (ob.type === 'portal_fly_end' && p.flightMode) {
         const ox = ob.x - this.scrollX;
-        const cx = ox + ob.w / 2;
-        if (cx >= p.x + p.width / 2 - 20 && cx <= p.x + p.width / 2 + 20 &&
-            p.y + p.height / 2 >= ob.y && p.y + p.height / 2 <= ob.y + ob.h) {
+        const margin = 25;
+        const overlapX = p.x + p.width + margin > ox && p.x - margin < ox + ob.w;
+        const overlapY = p.y + p.height > ob.y && p.y < ob.y + ob.h;
+        if (overlapX && overlapY) {
           p.flightMode = false;
           p.vy = 0;
           for (let i = 0; i < 12; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
