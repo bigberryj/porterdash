@@ -31,11 +31,6 @@ class BackgroundSystem {
     this.bgTheme = 'default';
     this.flashTimer = 0;
     this.screenFlash = 0;
-    this._gridCache = null;
-    this._gridCacheCtx = null;
-    this._lastGridBucket = -999;
-    this._lastGridRainbow = undefined;
-    this._GRID_CACHE_BUCKET = 24;
   }
 
   init(colors, creatureTypes, bgTheme) {
@@ -826,46 +821,34 @@ class BackgroundSystem {
     ctx.fill();
   }
 
-  // ==================== GRID (offscreen cache when scroll/theme change beyond threshold) ====================
+  // ==================== GRID ====================
 
   drawGrid(rainbowHue) {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
-    const bucket = Math.floor(this.gridOffset / this._GRID_CACHE_BUCKET);
-    const rainbowChanged = (rainbowHue !== this._lastGridRainbow);
-    if (!this._gridCache || this._gridCache.width !== w || this._gridCache.height !== h) {
-      this._gridCache = document.createElement('canvas');
-      this._gridCache.width = w;
-      this._gridCache.height = h;
-      this._gridCacheCtx = this._gridCache.getContext('2d');
-      this._lastGridBucket = -999;
+    const spacing = 60;
+    const lineColor = rainbowHue !== undefined
+      ? `hsla(${rainbowHue}, 100%, 50%, 0.06)`
+      : this.colors.gridLines;
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1;
+
+    const startX = -this.gridOffset;
+    for (let x = startX; x < w; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
     }
-    if (bucket !== this._lastGridBucket || rainbowChanged) {
-      this._lastGridBucket = bucket;
-      this._lastGridRainbow = rainbowHue;
-      const cctx = this._gridCacheCtx;
-      const spacing = 60;
-      const lineColor = rainbowHue !== undefined
-        ? `hsla(${rainbowHue}, 100%, 50%, 0.06)`
-        : this.colors.gridLines;
-      cctx.strokeStyle = lineColor;
-      cctx.lineWidth = 1;
-      const startX = -this.gridOffset;
-      for (let x = startX; x < w + spacing; x += spacing) {
-        cctx.beginPath();
-        cctx.moveTo(x, 0);
-        cctx.lineTo(x, h);
-        cctx.stroke();
-      }
-      for (let y = 0; y < h; y += spacing) {
-        cctx.beginPath();
-        cctx.moveTo(0, y);
-        cctx.lineTo(w, y);
-        cctx.stroke();
-      }
+
+    for (let y = 0; y < h; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
     }
-    ctx.drawImage(this._gridCache, 0, 0);
   }
 
   // ==================== DISTANT PLANET (Space theme) ====================

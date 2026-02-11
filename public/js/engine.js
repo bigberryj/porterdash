@@ -760,7 +760,19 @@ class GameEngine {
     if (!this.hasCheckpoint()) return;
     this.state = 'playing';
     this.player.dead = false;
-    this.scrollX = this.checkpointScrollX;
+    let scrollX = this.checkpointScrollX;
+    const playerScreenX = this.displayWidth * 0.15;
+    const margin = 30;
+    for (const ob of this.obstacles) {
+      if (!ob.deadly) continue;
+      const playerWorldLeft = scrollX + playerScreenX;
+      const playerWorldRight = playerWorldLeft + this.player.width;
+      const obRight = ob.x + ob.w;
+      if (playerWorldRight > ob.x && playerWorldLeft < obRight) {
+        scrollX = Math.max(scrollX, obRight + margin - playerScreenX);
+      }
+    }
+    this.scrollX = scrollX;
     this.player.x = this.displayWidth * 0.15;
     this.player.y = this.groundY - this.player.height;
     this.player.vy = 0;
@@ -774,7 +786,7 @@ class GameEngine {
     this.screenShake = 0;
     this.deathParticles = [];
     this.deathProgress = this.getProgress();
-    const cp = this.checkpointScrollX;
+    const cp = this.scrollX;
     this.triggeredFlightPortals = new Set(
       [...this.triggeredFlightPortals].filter((x) => x < cp)
     );
@@ -975,8 +987,8 @@ class GameEngine {
         if (!pathStarted) {
           const startY = this.getGroundY(scrollX + x1) ?? this.groundY;
           ctx.beginPath();
-          ctx.moveTo(x1, h);
-          ctx.lineTo(x1, startY);
+          ctx.moveTo(Math.round(x1), h);
+          ctx.lineTo(Math.round(x1), Math.round(startY));
           pathStarted = true;
         }
         if (seg.type === 'curve' && seg.rise != null) {
@@ -986,15 +998,15 @@ class GameEngine {
             const worldX = seg.x + (sx - x1);
             const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
-            ctx.lineTo(sx, sy);
+            ctx.lineTo(Math.round(sx), Math.round(sy));
           }
           runEndX = x2;
           runEndY = seg.y0 - seg.rise * Math.sin(1 * Math.PI);
         } else {
           const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / segLen;
           const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / segLen;
-          ctx.lineTo(x1, y1);
-          ctx.lineTo(x2, y2);
+          ctx.lineTo(Math.round(x1), Math.round(y1));
+          ctx.lineTo(Math.round(x2), Math.round(y2));
           runEndX = x2;
           runEndY = y2;
         }
@@ -1002,7 +1014,6 @@ class GameEngine {
       ctx.restore();
       ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
 
-      // Draw all solid ground as one continuous path per "run" (no segment boundaries = no shift at peaks)
       pathStarted = false;
       runEndX = 0;
       runEndY = this.groundY;
@@ -1012,8 +1023,8 @@ class GameEngine {
         const outOfView = seg && (seg.endX <= scrollX || seg.x >= scrollX + w);
         if (isGap || outOfView || !seg) {
           if (pathStarted) {
-            ctx.lineTo(runEndX, runEndY);
-            ctx.lineTo(runEndX, h);
+            ctx.lineTo(Math.round(runEndX), Math.round(runEndY));
+            ctx.lineTo(Math.round(runEndX), h);
             ctx.closePath();
             ctx.fill();
             pathStarted = false;
@@ -1028,8 +1039,8 @@ class GameEngine {
         if (!pathStarted) {
           const startY = this.getGroundY(scrollX + x1) ?? this.groundY;
           ctx.beginPath();
-          ctx.moveTo(x1, h);
-          ctx.lineTo(x1, startY);
+          ctx.moveTo(Math.round(x1), h);
+          ctx.lineTo(Math.round(x1), Math.round(startY));
           pathStarted = true;
         }
         if (seg.type === 'curve' && seg.rise != null) {
@@ -1039,15 +1050,15 @@ class GameEngine {
             const worldX = seg.x + (sx - x1);
             const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
-            ctx.lineTo(sx, sy);
+            ctx.lineTo(Math.round(sx), Math.round(sy));
           }
           runEndX = x2;
           runEndY = seg.y0 - seg.rise * Math.sin(1 * Math.PI);
         } else {
           const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / segLen;
           const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / segLen;
-          ctx.lineTo(x1, y1);
-          ctx.lineTo(x2, y2);
+          ctx.lineTo(Math.round(x1), Math.round(y1));
+          ctx.lineTo(Math.round(x2), Math.round(y2));
           runEndX = x2;
           runEndY = y2;
         }
@@ -1076,14 +1087,14 @@ class GameEngine {
             const worldX = seg.x + (sx - x1);
             const t = (worldX - seg.x) / segLen;
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
-            if (i === 0) ctx.moveTo(sx, sy);
-            else ctx.lineTo(sx, sy);
+            if (i === 0) ctx.moveTo(Math.round(sx), Math.round(sy));
+            else ctx.lineTo(Math.round(sx), Math.round(sy));
           }
         } else {
           const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / segLen;
           const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / segLen;
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
+          ctx.moveTo(Math.round(x1), Math.round(y1));
+          ctx.lineTo(Math.round(x2), Math.round(y2));
         }
         ctx.stroke();
       }
