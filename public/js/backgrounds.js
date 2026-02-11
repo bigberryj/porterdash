@@ -591,8 +591,9 @@ class BackgroundSystem {
 
   draw(rainbowHue, drawScrollX) {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
     const colors = this.colors;
     const theme = this.bgTheme;
 
@@ -825,15 +826,17 @@ class BackgroundSystem {
 
   drawGrid(rainbowHue) {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    // Use CSS pixel dimensions (canvas.width is DPR-scaled, context is already scaled by DPR)
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
     const spacing = 60;
     const lineColor = rainbowHue !== undefined
-      ? `hsla(${rainbowHue}, 100%, 50%, 0.06)`
+      ? `hsla(${rainbowHue}, 100%, 50%, 0.04)`
       : this.colors.gridLines;
 
     ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 0.5;
 
     const startX = -this.gridOffset;
     for (let x = startX; x < w; x += spacing) {

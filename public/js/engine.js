@@ -59,7 +59,7 @@ class GameEngine {
     this.doubleJumpFlash = 0;
     this.MAX_DEATH_PARTICLES = 60;
     this.MAX_TRAIL_PARTICLES = 80;
-    this.cameraLookAhead = 55;
+    this.cameraLookAhead = 0;
     this._deathParticlePool = [];
     this._trailParticlePool = [];
     this.deathSlowMoFrames = 0;
@@ -126,6 +126,8 @@ class GameEngine {
     this.collectedStars = new Set();
     this.collectiblesTotal = 0;
     this.checkpointScrollX = null;
+    this.checkpoint33Set = false;
+    this.checkpoint66Set = false;
     this.deathSlowMoFrames = 0;
 
     this.buildObstacles();
@@ -425,10 +427,15 @@ class GameEngine {
     }
     this.scrollX += effectiveSpeed;
 
-    // Checkpoints at 33% and 66% (keep furthest passed)
+    // Checkpoints at 33% and 66% (set once when first crossing)
     const progress = this.getProgress();
-    if (progress >= 0.66) this.checkpointScrollX = this.scrollX;
-    else if (progress >= 0.33) this.checkpointScrollX = this.scrollX;
+    if (progress >= 0.66 && !this.checkpoint66Set) {
+      this.checkpointScrollX = this.scrollX;
+      this.checkpoint66Set = true;
+    } else if (progress >= 0.33 && !this.checkpoint33Set) {
+      this.checkpointScrollX = this.scrollX;
+      this.checkpoint33Set = true;
+    }
 
     // Check level complete
     if (progress >= 1) {
@@ -762,19 +769,36 @@ class GameEngine {
     this.player.dead = false;
     let scrollX = this.checkpointScrollX;
     const playerScreenX = this.displayWidth * 0.15;
-    const margin = 30;
-    for (const ob of this.obstacles) {
-      if (!ob.deadly) continue;
+    const pw = this.player.width;
+    const ph = this.player.height;
+    const margin = 60;
+
+    // Repeatedly advance scrollX until the player doesn't overlap any deadly obstacle
+    let safe = false;
+    let maxIter = 50; // safety limit
+    while (!safe && maxIter-- > 0) {
+      safe = true;
       const playerWorldLeft = scrollX + playerScreenX;
-      const playerWorldRight = playerWorldLeft + this.player.width;
-      const obRight = ob.x + ob.w;
-      if (playerWorldRight > ob.x && playerWorldLeft < obRight) {
-        scrollX = Math.max(scrollX, obRight + margin - playerScreenX);
+      const playerWorldRight = playerWorldLeft + pw;
+      const playerWorldTop = this.groundY - ph;
+      const playerWorldBottom = this.groundY;
+      for (const ob of this.obstacles) {
+        if (!ob.deadly) continue;
+        const obRight = ob.x + (ob.w || 0);
+        const obBottom = ob.y + (ob.h || 0);
+        // AABB overlap check
+        if (playerWorldRight > ob.x && playerWorldLeft < obRight &&
+            playerWorldBottom > ob.y && playerWorldTop < obBottom) {
+          scrollX = obRight + margin - playerScreenX;
+          safe = false;
+          break; // re-check from new position
+        }
       }
     }
+
     this.scrollX = scrollX;
-    this.player.x = this.displayWidth * 0.15;
-    this.player.y = this.groundY - this.player.height;
+    this.player.x = playerScreenX;
+    this.player.y = this.groundY - ph;
     this.player.vy = 0;
     this.player.onGround = true;
     this.player.rotation = 0;
