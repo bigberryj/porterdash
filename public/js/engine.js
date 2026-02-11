@@ -1019,7 +1019,7 @@ class GameEngine {
           const steps = Math.max(8, Math.floor((x2 - x1) / 4));
           for (let s = 0; s <= steps; s++) {
             const sx = x1 + (s / steps) * (x2 - x1);
-            const worldX = seg.x + (sx - x1);
+            const worldX = scrollX + sx;
             const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
             ctx.lineTo(Math.round(sx), Math.round(sy));
@@ -1071,7 +1071,7 @@ class GameEngine {
           const steps = Math.max(8, Math.floor((x2 - x1) / 4));
           for (let s = 0; s <= steps; s++) {
             const sx = x1 + (s / steps) * (x2 - x1);
-            const worldX = seg.x + (sx - x1);
+            const worldX = scrollX + sx;
             const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
             ctx.lineTo(Math.round(sx), Math.round(sy));
@@ -1108,8 +1108,8 @@ class GameEngine {
           const steps = Math.max(8, Math.floor((x2 - x1) / 4));
           for (let i = 0; i <= steps; i++) {
             const sx = x1 + (i / steps) * (x2 - x1);
-            const worldX = seg.x + (sx - x1);
-            const t = (worldX - seg.x) / segLen;
+            const worldX = scrollX + sx;
+            const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
             if (i === 0) ctx.moveTo(Math.round(sx), Math.round(sy));
             else ctx.lineTo(Math.round(sx), Math.round(sy));
