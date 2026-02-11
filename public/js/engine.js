@@ -58,7 +58,7 @@ class GameEngine {
     this.screenShake = 0;
     this.doubleJumpFlash = 0;
     this.MAX_DEATH_PARTICLES = 60;
-    this.MAX_TRAIL_PARTICLES = 80;
+    this.MAX_TRAIL_PARTICLES = 250;
     this.cameraLookAhead = 0;
     this._deathParticlePool = [];
     this._trailParticlePool = [];
@@ -133,6 +133,9 @@ class GameEngine {
     this.takeoffTimer = 0;
     this.shipBaseY = 0;
     this.shipX = 0;
+    this.boardingScrollTarget = 0;
+    this.boardingScrollStart = 0;
+    this.warpStreaks = [];
     this.player.boardingScale = 1;
     this.jumpPressed = false;
     this.jumpHeld = false;
@@ -447,22 +450,41 @@ class GameEngine {
     if (this.state === 'boarding') {
       this.time++;
       this.boardingTimer++;
-      this.bg.update(0, this.scrollX);
-      // Move cube toward spaceship door
-      const shipScreenX = this.shipX - this.scrollX;
-      const targetX = shipScreenX + this.BLOCK_SIZE * 1.5;
       const t = Math.min(1, this.boardingTimer / this.boardingDuration);
       const ease = t * t * (3 - 2 * t); // smoothstep
-      this.player.x = this.player.x + (targetX - this.player.x) * 0.08;
-      this.player.y = this.groundY - this.player.height - ease * this.BLOCK_SIZE * 1.5;
-      // Shrink cube as it enters
+
+      // Smoothly pan camera to center spaceship on screen
+      this.scrollX = this.boardingScrollStart + (this.boardingScrollTarget - this.boardingScrollStart) * ease;
+      this.bg.update(0, this.scrollX);
+
+      // Move cube toward spaceship cockpit
+      const shipScreenX = this.shipX - this.scrollX;
+      const shipCenterX = shipScreenX + this.BLOCK_SIZE * 2; // center of ship
+      this.player.x = this.player.x + (shipCenterX - this.player.x) * 0.1;
+      // Rise up toward cockpit window area
+      const cockpitY = this.shipBaseY + this.BLOCK_SIZE * 1.2;
+      this.player.y = this.player.y + (cockpitY - this.player.y) * 0.08;
+
+      // Shrink cube as it enters (second half of animation)
       if (t > 0.5) {
-        this.player.boardingScale = 1 - (t - 0.5) * 2; // 1.0 -> 0.0
+        this.player.boardingScale = 1 - (t - 0.5) * 2;
       }
       if (this.boardingTimer >= this.boardingDuration) {
         this.state = 'takeoff';
         this.takeoffTimer = 0;
         this.player.boardingScale = 0;
+        // Initialize warp streaks for lightspeed effect
+        this.warpStreaks = [];
+        for (let i = 0; i < 80; i++) {
+          this.warpStreaks.push({
+            x: Math.random() * this.displayWidth,
+            y: Math.random() * this.displayHeight,
+            len: 2 + Math.random() * 5,
+            speed: 3 + Math.random() * 8,
+            alpha: 0.3 + Math.random() * 0.7,
+            hue: 180 + Math.random() * 60,
+          });
+        }
       }
       return;
     }
@@ -470,20 +492,75 @@ class GameEngine {
       this.time++;
       this.takeoffTimer++;
       this.bg.update(0, this.scrollX);
-      // Ship rises and flies away
       const tt = Math.min(1, this.takeoffTimer / this.takeoffDuration);
-      const accel = tt * tt * tt; // cubic acceleration
+
+      // Phase 1 (0-30%): rumble, thrust builds
+      // Phase 2 (30-60%): ship lifts off, particles spray, warp streaks start
+      // Phase 3 (60-100%): lightspeed zoom, ship rockets away, streaks max out
+      const liftStart = 0.25;
+      const warpStart = 0.5;
+
       for (const ob of this.obstacles) {
         if (ob.type === 'spaceship') {
-          ob.y = this.shipBaseY - accel * this.displayHeight * 1.5;
-          ob.thrustIntensity = Math.min(1, tt * 2);
+          ob.thrustIntensity = Math.min(1, tt * 3);
+          if (tt < liftStart) {
+            // Slight hover/vibrate
+            ob.y = this.shipBaseY - Math.sin(this.time * 0.3) * 3;
+          } else {
+            // Accelerating upward (exponential)
+            const liftT = (tt - liftStart) / (1 - liftStart);
+            const accel = liftT * liftT * liftT * liftT; // quartic
+            ob.y = this.shipBaseY - accel * this.displayHeight * 2;
+          }
         }
       }
-      this.screenShake = tt < 0.3 ? tt * 10 : Math.max(0, 3 - tt * 3);
+
+      // Screen shake: builds during rumble, peaks at lift, fades during warp
+      if (tt < liftStart) {
+        this.screenShake = tt / liftStart * 6;
+      } else if (tt < warpStart) {
+        this.screenShake = 6 + (tt - liftStart) / (warpStart - liftStart) * 6;
+      } else {
+        this.screenShake = Math.max(0, 12 * (1 - (tt - warpStart) / (1 - warpStart)));
+      }
+
+      // Spawn exhaust particles during takeoff
+      if (tt > liftStart) {
+        const shipScreenX = this.shipX - this.scrollX + this.BLOCK_SIZE * 2;
+        const shipY = this.shipBaseY + this.BLOCK_SIZE * 4;
+        const spawnCount = tt > warpStart ? 6 : 3;
+        for (let i = 0; i < spawnCount; i++) {
+          if (this.portalEffects.length > 100) break;
+          this.portalEffects.push({
+            x: shipScreenX + (Math.random() - 0.5) * this.BLOCK_SIZE * 2,
+            y: shipY + Math.random() * 20,
+            vx: (Math.random() - 0.5) * 4,
+            vy: 3 + Math.random() * 6,
+            life: 1,
+            decay: 0.02 + Math.random() * 0.02,
+            size: 3 + Math.random() * 5,
+          });
+        }
+      }
+
+      // Update warp streaks (Star Trek lightspeed lines)
+      if (this.warpStreaks && tt > warpStart) {
+        const warpT = (tt - warpStart) / (1 - warpStart);
+        for (const s of this.warpStreaks) {
+          s.len = (2 + warpT * 80) * s.speed * 0.3; // streaks get longer
+          s.y += s.speed * (1 + warpT * 15); // streaks move faster
+          if (s.y > this.displayHeight + 20) {
+            s.y = -s.len;
+            s.x = Math.random() * this.displayWidth;
+          }
+        }
+      }
+
       if (this.takeoffTimer >= this.takeoffDuration) {
         this.state = 'complete';
         sound.stopMusic();
         this.screenShake = 0;
+        this.warpStreaks = [];
       }
       return;
     }
@@ -528,14 +605,18 @@ class GameEngine {
     if (progress >= 1 && this.state !== 'boarding' && this.state !== 'takeoff') {
       this.state = 'boarding';
       this.boardingTimer = 0;
-      this.boardingDuration = 60; // frames to enter the ship
+      this.boardingDuration = 80; // frames to enter the ship
       this.takeoffTimer = 0;
-      this.takeoffDuration = 90; // frames for ship to take off
-      this.shipBaseY = this.groundY - this.BLOCK_SIZE * 4;
-      this.shipX = 0; // will be set from obstacle
+      this.takeoffDuration = 120; // frames for ship to take off
+      this.shipX = 0;
       for (const ob of this.obstacles) {
         if (ob.type === 'spaceship') { this.shipX = ob.x; break; }
       }
+      this.shipBaseY = this.groundY - this.BLOCK_SIZE * 4;
+      // Camera target: center the ship on screen
+      this.boardingScrollTarget = this.shipX - this.displayWidth / 2 + this.BLOCK_SIZE * 2;
+      this.boardingScrollStart = this.scrollX;
+      this.warpStreaks = []; // for lightspeed effect
       sound.playComplete();
       return;
     }
@@ -725,31 +806,35 @@ class GameEngine {
       }
     }
 
-    // Trail
+    // Trail (position history)
     p.trail.push({ x: p.x + p.width / 2, y: p.y + p.height / 2, age: 0 });
-    if (p.trail.length > 15) p.trail.shift();
+    const maxTrailLen = p.flightMode ? 50 : 35;
+    if (p.trail.length > maxTrailLen) p.trail.shift();
     for (const t of p.trail) t.age++;
 
     // Trailing particles (spawn behind cube when moving / flying)
     if (!p.dead && (p.flightMode || Math.abs(p.vy) > 0.5 || this.speed > 0)) {
-      const rate = p.flightMode ? 2 : 1;
-      if (this.time % rate === 0) {
+      // Spawn multiple particles per frame for a dense trail
+      const count = p.flightMode ? 3 : 2;
+      for (let n = 0; n < count; n++) {
         const px = p.x + p.width / 2;
         const py = p.y + p.height / 2;
-        const backX = px - (p.flightMode ? 18 : 12);
+        const backX = px - (p.flightMode ? 22 : 14);
         const pt = this._trailParticlePool.pop() || {};
-        pt.x = backX + (Math.random() - 0.5) * 8;
-        pt.y = py + (Math.random() - 0.5) * 6;
-        pt.vx = -1.2 - Math.random() * 1.5;
-        pt.vy = (Math.random() - 0.5) * 0.8;
+        pt.x = backX + (Math.random() - 0.5) * 10;
+        pt.y = py + (Math.random() - 0.5) * (p.flightMode ? 10 : 6);
+        pt.vx = -1.5 - Math.random() * 2;
+        pt.vy = (Math.random() - 0.5) * 1.0;
         pt.life = 1;
-        pt.decay = p.flightMode ? 0.028 : 0.035;
-        pt.size = p.flightMode ? 4 + Math.random() * 4 : 2.5 + Math.random() * 3;
+        pt.decay = p.flightMode ? 0.015 : 0.02;
+        pt.size = p.flightMode ? 4 + Math.random() * 5 : 2.5 + Math.random() * 3.5;
         pt.isFlight = !!p.flightMode;
         this.playerTrailParticles.push(pt);
       }
     }
-    if (this.playerTrailParticles.length > 80) this.playerTrailParticles.splice(0, 20);
+    if (this.playerTrailParticles.length > this.MAX_TRAIL_PARTICLES) {
+      this.playerTrailParticles.splice(0, this.playerTrailParticles.length - this.MAX_TRAIL_PARTICLES);
+    }
 
     // Collision detection
     this.checkCollisions();
@@ -1025,7 +1110,7 @@ class GameEngine {
       pt.x += pt.vx; pt.y += pt.vy; pt.life -= pt.decay;
       if (pt.life <= 0) {
         this.playerTrailParticles.splice(i, 1);
-        if (this._trailParticlePool.length < 120) this._trailParticlePool.push(pt);
+        if (this._trailParticlePool.length < 300) this._trailParticlePool.push(pt);
       }
     }
     if (this.portalTransitionEffect) {
@@ -1060,6 +1145,38 @@ class GameEngine {
 
     this.drawEffects();
     if (this.portalTransitionEffect) this.drawPortalTransitionEffect();
+
+    // Warp streaks (Star Trek lightspeed effect during takeoff)
+    if (this.state === 'takeoff' && this.warpStreaks && this.warpStreaks.length > 0) {
+      const tt = Math.min(1, this.takeoffTimer / this.takeoffDuration);
+      const warpStart = 0.5;
+      if (tt > warpStart) {
+        const warpT = (tt - warpStart) / (1 - warpStart);
+
+        ctx.save();
+        for (const s of this.warpStreaks) {
+          const alpha = s.alpha * warpT;
+          ctx.strokeStyle = `hsla(${s.hue}, 80%, 80%, ${alpha})`;
+          ctx.lineWidth = 1 + warpT * 2;
+          ctx.shadowColor = `hsla(${s.hue}, 100%, 90%, ${alpha})`;
+          ctx.shadowBlur = 4 + warpT * 8;
+          ctx.beginPath();
+          ctx.moveTo(s.x, s.y);
+          ctx.lineTo(s.x, s.y - s.len);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+
+        // White flash building toward the end (jump to lightspeed)
+        if (warpT > 0.7) {
+          const flashAlpha = (warpT - 0.7) / 0.3;
+          ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.8})`;
+          ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
+        }
+        ctx.restore();
+      }
+    }
+
     ctx.restore();
   }
 
@@ -1663,8 +1780,8 @@ class GameEngine {
     ctx.globalAlpha = 1;
 
     // Trail (longer streaks in flight mode)
-    const trailLen = p.flightMode ? 22 : 15;
-    const trailSizeMult = p.flightMode ? 0.5 : 0.4;
+    const trailLen = p.flightMode ? 50 : 35;
+    const trailSizeMult = p.flightMode ? 0.55 : 0.45;
     for (let i = 0; i < p.trail.length; i++) {
       const t = p.trail[i];
       const alpha = (1 - t.age / trailLen) * 0.4;
@@ -1814,11 +1931,18 @@ class GameEngine {
     ctx.globalAlpha = 1;
 
     for (const p of this.portalEffects) {
-      if (p.x + p.size < -cullMargin || p.x - p.size > w + cullMargin) continue;
+      const sz = p.size || 3;
+      if (p.x + sz < -cullMargin || p.x - sz > w + cullMargin) continue;
       ctx.globalAlpha = p.life * 0.6;
-      ctx.fillStyle = colors.portal || '#fff';
+      // Exhaust particles during takeoff glow orange/white
+      if (this.state === 'takeoff' && p.vy > 2) {
+        const hue = 20 + p.life * 30;
+        ctx.fillStyle = `hsl(${hue}, 100%, ${50 + p.life * 40}%)`;
+      } else {
+        ctx.fillStyle = colors.portal || '#fff';
+      }
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
