@@ -60,6 +60,8 @@ class GameEngine {
     this.MAX_DEATH_PARTICLES = 60;
     this.MAX_TRAIL_PARTICLES = 80;
     this.cameraLookAhead = 55;
+    this._deathParticlePool = [];
+    this._trailParticlePool = [];
     this.deathSlowMoFrames = 0;
     this.checkpointScrollX = null;
     this.justLandedFromFlight = false;
@@ -619,16 +621,16 @@ class GameEngine {
         const px = p.x + p.width / 2;
         const py = p.y + p.height / 2;
         const backX = px - (p.flightMode ? 18 : 12);
-        this.playerTrailParticles.push({
-          x: backX + (Math.random() - 0.5) * 8,
-          y: py + (Math.random() - 0.5) * 6,
-          vx: -1.2 - Math.random() * 1.5,
-          vy: (Math.random() - 0.5) * 0.8,
-          life: 1,
-          decay: p.flightMode ? 0.028 : 0.035,
-          size: p.flightMode ? 4 + Math.random() * 4 : 2.5 + Math.random() * 3,
-          isFlight: !!p.flightMode,
-        });
+        const pt = this._trailParticlePool.pop() || {};
+        pt.x = backX + (Math.random() - 0.5) * 8;
+        pt.y = py + (Math.random() - 0.5) * 6;
+        pt.vx = -1.2 - Math.random() * 1.5;
+        pt.vy = (Math.random() - 0.5) * 0.8;
+        pt.life = 1;
+        pt.decay = p.flightMode ? 0.028 : 0.035;
+        pt.size = p.flightMode ? 4 + Math.random() * 4 : 2.5 + Math.random() * 3;
+        pt.isFlight = !!p.flightMode;
+        this.playerTrailParticles.push(pt);
       }
     }
     if (this.playerTrailParticles.length > 80) this.playerTrailParticles.splice(0, 20);
@@ -741,16 +743,16 @@ class GameEngine {
     const maxDeath = this.MAX_DEATH_PARTICLES || 60;
     for (let i = 0; i < 20; i++) {
       if (this.deathParticles.length >= maxDeath) break;
-      this.deathParticles.push({
-        x: p.x + p.width / 2,
-        y: p.y + p.height / 2,
-        vx: (Math.random() - 0.5) * 12,
-        vy: (Math.random() - 0.5) * 12 - 3,
-        size: 3 + Math.random() * 6,
-        color: Math.random() > 0.5 ? colors.accent1 : colors.accent2,
-        life: 1,
-        decay: 0.015 + Math.random() * 0.02,
-      });
+      const pt = this._deathParticlePool.pop() || {};
+      pt.x = p.x + p.width / 2;
+      pt.y = p.y + p.height / 2;
+      pt.vx = (Math.random() - 0.5) * 12;
+      pt.vy = (Math.random() - 0.5) * 12 - 3;
+      pt.size = 3 + Math.random() * 6;
+      pt.color = Math.random() > 0.5 ? colors.accent1 : colors.accent2;
+      pt.life = 1;
+      pt.decay = 0.015 + Math.random() * 0.02;
+      this.deathParticles.push(pt);
     }
   }
 
@@ -844,10 +846,24 @@ class GameEngine {
   }
 
   updateEffects() {
+    if (this.state === 'dead') {
+      for (let i = this.deathParticles.length - 1; i >= 0; i--) {
+        const p = this.deathParticles[i];
+        p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= p.decay;
+        if (p.life <= 0) {
+          this.deathParticles.splice(i, 1);
+          if (this._deathParticlePool.length < 100) this._deathParticlePool.push(p);
+        }
+      }
+      return;
+    }
     for (let i = this.deathParticles.length - 1; i >= 0; i--) {
       const p = this.deathParticles[i];
       p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= p.decay;
-      if (p.life <= 0) this.deathParticles.splice(i, 1);
+      if (p.life <= 0) {
+        this.deathParticles.splice(i, 1);
+        if (this._deathParticlePool.length < 100) this._deathParticlePool.push(p);
+      }
     }
     for (let i = this.groundParticles.length - 1; i >= 0; i--) {
       const p = this.groundParticles[i];
@@ -862,7 +878,10 @@ class GameEngine {
     for (let i = this.playerTrailParticles.length - 1; i >= 0; i--) {
       const pt = this.playerTrailParticles[i];
       pt.x += pt.vx; pt.y += pt.vy; pt.life -= pt.decay;
-      if (pt.life <= 0) this.playerTrailParticles.splice(i, 1);
+      if (pt.life <= 0) {
+        this.playerTrailParticles.splice(i, 1);
+        if (this._trailParticlePool.length < 120) this._trailParticlePool.push(pt);
+      }
     }
     if (this.portalTransitionEffect) {
       this.portalTransitionEffect.progress++;
@@ -1136,11 +1155,18 @@ class GameEngine {
     const ctx = this.ctx;
     const colors = this.level.colors;
     const scrollForDraw = drawScrollX != null ? drawScrollX : this.scrollX;
+    const w = this.displayWidth;
+    const margin = 50;
 
+    const visible = [];
     for (const ob of this.obstacles) {
       const ox = ob.x - scrollForDraw;
-      if (ox + ob.w < -50 || ox > this.displayWidth + 50) continue;
+      if (ox + ob.w < -margin || ox > w + margin) continue;
+      visible.push({ ob, ox });
+    }
+    visible.sort((a, b) => (a.ob.type > b.ob.type ? 1 : a.ob.type < b.ob.type ? -1 : 0));
 
+    for (const { ob, ox } of visible) {
       switch (ob.type) {
         case 'spike': this.drawSpike(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'spike_up': this.drawSpikeUp(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
@@ -1600,8 +1626,12 @@ class GameEngine {
   drawEffects() {
     const ctx = this.ctx;
     const colors = this.level ? this.level.colors : {};
+    const w = this.displayWidth;
+    const h = this.displayHeight;
+    const cullMargin = 80;
 
     for (const p of this.deathParticles) {
+      if (p.x + p.size < -cullMargin || p.x - p.size > w + cullMargin) continue;
       ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
       ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
@@ -1609,6 +1639,7 @@ class GameEngine {
     ctx.globalAlpha = 1;
 
     for (const p of this.groundParticles) {
+      if (p.x + p.size < -cullMargin || p.x - p.size > w + cullMargin) continue;
       ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
       ctx.beginPath();
@@ -1618,6 +1649,7 @@ class GameEngine {
     ctx.globalAlpha = 1;
 
     for (const p of this.portalEffects) {
+      if (p.x + p.size < -cullMargin || p.x - p.size > w + cullMargin) continue;
       ctx.globalAlpha = p.life * 0.6;
       ctx.fillStyle = colors.portal || '#fff';
       ctx.beginPath();
