@@ -17,6 +17,10 @@ class BackgroundSystem {
     this.stalactites = [];
     this.flashElements = [];
     this.laserBeams = [];
+    this.lightStreaks = [];
+    this.segmentedLayers = [];
+    this.bottomWavePhase = 0;
+    this.scrollX = 0;
     this.gridOffset = 0;
     this.time = 0;
     this.pulsePhase = 0;
@@ -37,11 +41,43 @@ class BackgroundSystem {
     this.stalactites = [];
     this.flashElements = [];
     this.laserBeams = [];
+    this.lightStreaks = [];
+    this.segmentedLayers = [];
+    this.bottomWavePhase = 0;
+    this.scrollX = 0;
     this.flashTimer = 0;
     this.screenFlash = 0;
 
     const w = this.canvas.width;
     const h = this.canvas.height;
+
+    // Vertical light streaks (digital rain / energy streams) - Geometry Dash style
+    const streakCount = 50 + Math.floor(Math.random() * 30);
+    for (let i = 0; i < streakCount; i++) {
+      this.lightStreaks.push({
+        x: Math.random() * w * 1.3,
+        y: Math.random() * h,
+        length: 60 + Math.random() * 140,
+        speedY: 1 + Math.random() * 2,
+        speedX: -0.15 - Math.random() * 0.35,
+        opacity: 0.06 + Math.random() * 0.14,
+        width: 0.6 + Math.random() * 1.4,
+      });
+    }
+
+    // Layered segmented panels (parallax wall - vertical strips for side-scroll)
+    for (let layer = 0; layer < 3; layer++) {
+      const segmentWidth = 70 + layer * 35 + Math.random() * 35;
+      const segmentCount = Math.ceil((w * 1.8) / segmentWidth) + 2;
+      this.segmentedLayers.push({
+        layer,
+        segmentWidth,
+        segmentCount,
+        speed: 0.1 + layer * 0.07,
+        offset: Math.random() * segmentWidth,
+        opacity: 0.09 - layer * 0.025,
+      });
+    }
 
     // Create background floating shapes (parallax layer)
     for (let i = 0; i < 20; i++) {
@@ -271,9 +307,10 @@ class BackgroundSystem {
 
   // ==================== UPDATE ====================
 
-  update(scrollSpeed) {
+  update(scrollSpeed, scrollX) {
     this.time++;
     this.pulsePhase += 0.02;
+    if (scrollX !== undefined) this.scrollX = scrollX;
     this.gridOffset = (this.gridOffset + scrollSpeed * 0.5) % 60;
 
     const w = this.canvas.width;
@@ -298,6 +335,26 @@ class BackgroundSystem {
         p.y = Math.random() * h;
       }
     }
+
+    // Update vertical light streaks (digital rain)
+    for (const s of this.lightStreaks) {
+      s.y += s.speedY;
+      s.x += s.speedX - scrollSpeed * 0.15;
+      if (s.y > h + s.length) {
+        s.y = -s.length - Math.random() * 80;
+        s.x = Math.random() * w * 1.2;
+      }
+      if (s.x < -20) s.x = w + 20;
+      if (s.x > w + 20) s.x = -20;
+    }
+
+    // Update segmented layers parallax
+    for (const sl of this.segmentedLayers) {
+      sl.offset += scrollSpeed * sl.speed;
+      if (sl.offset >= sl.segmentWidth) sl.offset -= sl.segmentWidth;
+    }
+
+    this.bottomWavePhase += 0.02 + scrollSpeed * 0.002;
 
     // Update creatures
     for (const c of this.creatures) {
@@ -429,6 +486,12 @@ class BackgroundSystem {
       this.drawCaveCeiling(rainbowHue);
     }
 
+    // Vertical light streaks (digital rain / energy streams)
+    this.drawLightStreaks(rainbowHue);
+
+    // Layered segmented background (parallax panels)
+    this.drawSegmentedLayers(rainbowHue);
+
     // Grid lines
     this.drawGrid(rainbowHue);
 
@@ -458,6 +521,9 @@ class BackgroundSystem {
 
     // Creatures
     this.drawCreatures(rainbowHue);
+
+    // Bottom zig-zag wave layer (parallax waves near bottom)
+    this.drawBottomWaves(rainbowHue);
 
     // Ambient glow pulse
     const pulse = Math.sin(this.pulsePhase) * 0.5 + 0.5;
@@ -504,6 +570,124 @@ class BackgroundSystem {
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
       ctx.stroke();
+    }
+  }
+
+  // ==================== LIGHT STREAKS (Digital rain) ====================
+
+  drawLightStreaks(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    for (const s of this.lightStreaks) {
+      const alpha = s.opacity * (0.75 + Math.sin(this.time * 0.02 + s.x * 0.01) * 0.25);
+      if (alpha <= 0) continue;
+
+      const color = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 180}, 100%, 88%, ${alpha})`
+        : this.colors.accent1
+          ? this.hexToRgba(this.colors.accent1, alpha)
+          : `rgba(200, 230, 255, ${alpha})`;
+
+      ctx.lineCap = 'round';
+      // Soft glow behind streak
+      ctx.strokeStyle = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 180}, 100%, 90%, ${alpha * 0.35})`
+        : this.colors.accent1
+          ? this.hexToRgba(this.colors.accent1, alpha * 0.35)
+          : `rgba(200, 230, 255, ${alpha * 0.35})`;
+      ctx.lineWidth = s.width * 3;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x + s.speedX * 8, s.y + s.length);
+      ctx.stroke();
+      // Bright core
+      ctx.strokeStyle = color;
+      ctx.lineWidth = s.width;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x + s.speedX * 8, s.y + s.length);
+      ctx.stroke();
+    }
+  }
+
+  hexToRgba(hex, alpha) {
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m) return `rgba(180, 220, 255, ${alpha})`;
+    return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${alpha})`;
+  }
+
+  // ==================== SEGMENTED LAYERS (Parallax panels) ====================
+
+  drawSegmentedLayers(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    for (const sl of this.segmentedLayers) {
+      const shade = 12 + sl.layer * 4;
+      const color = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 240}, 40%, ${shade}%, ${sl.opacity})`
+        : this.colors.bg2
+          ? this.hexToRgba(this.colors.bg2, sl.opacity)
+          : `rgba(30, 20, 50, ${sl.opacity})`;
+
+      ctx.fillStyle = color;
+      ctx.strokeStyle = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 220}, 50%, ${shade + 8}%, ${sl.opacity * 0.6})`
+        : this.colors.gridLines || `rgba(80, 60, 120, ${sl.opacity * 0.5})`;
+      ctx.lineWidth = 0.5;
+
+      const baseOffset = -sl.offset;
+      for (let col = -1; col < sl.segmentCount + 1; col++) {
+        const x = baseOffset + col * sl.segmentWidth;
+        if (x + sl.segmentWidth < 0 || x > w) continue;
+        const xx = Math.max(0, x);
+        const ww = Math.min(sl.segmentWidth, w - xx, (x + sl.segmentWidth) - xx);
+        if (ww <= 0) continue;
+        ctx.fillRect(xx, 0, ww, h);
+        ctx.strokeRect(xx, 0, ww, h);
+      }
+      ctx.lineWidth = 1;
+    }
+  }
+
+  // ==================== BOTTOM ZIG-ZAG WAVES ====================
+
+  drawBottomWaves(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const groundY = h * 0.82;
+    const waveHeight = 32;
+    const waveTop = groundY - waveHeight * 2.8;
+
+    const phase = this.bottomWavePhase + (this.scrollX || 0) * 0.015;
+    const step = 22;
+
+    for (let layer = 0; layer < 2; layer++) {
+      const layerPhase = phase + layer * 0.7;
+      const opacity = 0.11 - layer * 0.04;
+      const shade = 18 + layer * 6;
+      const color = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 260}, 50%, ${shade}%, ${opacity})`
+        : this.colors.bg2
+          ? this.hexToRgba(this.colors.bg2, opacity)
+          : `rgba(40, 25, 70, ${opacity})`;
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(-10, groundY + 20);
+
+      for (let x = -step * 2; x < w + step * 2; x += step) {
+        const t = (x / step) * 0.5 + layerPhase;
+        const y = waveTop + Math.sin(t) * waveHeight + layer * 8;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w + 20, groundY + 20);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 

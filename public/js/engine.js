@@ -258,7 +258,7 @@ class GameEngine {
     if (this.doubleJumpFlash > 0) this.doubleJumpFlash--;
     if (this.screenShake > 0) this.screenShake *= 0.9;
 
-    this.bg.update(this.speed);
+    this.bg.update(this.speed, this.scrollX);
   }
 
   checkCollisions() {
