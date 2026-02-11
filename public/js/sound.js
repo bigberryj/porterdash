@@ -1,8 +1,20 @@
 /**
  * PorterDash Sound System v2
- * Per-level electronic/techno/house music with Web Audio API
- * 10 unique tracks - no external files needed
+ * Level music from MP3 files in /music, synced to BPM for level timing
  */
+
+const MUSIC_TRACKS = [
+  { url: '/music/catch22music-doom-drum-and-bass-full-369484.mp3', bpm: 174 },
+  { url: '/music/catch22music-hopeless-drum-and-bass-full-369496.mp3', bpm: 170 },
+  { url: '/music/catch22music-rapid-drum-and-bass-full-369486.mp3', bpm: 174 },
+  { url: '/music/ebunny-cyberpunk-354179.mp3', bpm: 128 },
+  { url: '/music/industrial-breakbeat-old-school-90s-rave-punk-classic-4-472172.mp3', bpm: 140 },
+  { url: '/music/industrial-breakbeat-old-school-90s-rave-punk-classic-5-472174.mp3', bpm: 142 },
+  { url: '/music/kaleidoplasm-blockhead-135801.mp3', bpm: 135 },
+  { url: '/music/kaleidoplasm-s0l3m4gg07-135806.mp3', bpm: 138 },
+  { url: '/music/musinova-neon-sky-liquid-jungle-breakbeat-drum-and-bass-356503.mp3', bpm: 174 },
+  { url: '/music/tooone-11-snake-charmer-267944.mp3', bpm: 130 },
+];
 
 class SoundSystem {
   constructor() {
@@ -18,6 +30,9 @@ class SoundSystem {
     this.currentTrack = null;
     this.filterNode = null;
     this.filterLFO = 0;
+    this.musicAudio = null;
+    this.musicSource = null;
+    this.syncInterval = null;
   }
 
   init() {
@@ -59,9 +74,8 @@ class SoundSystem {
 
   toggleMusic() {
     this.musicEnabled = !this.musicEnabled;
-    if (this.musicGain) {
-      this.musicGain.gain.value = this.musicEnabled ? 0.3 : 0;
-    }
+    if (this.musicGain) this.musicGain.gain.value = this.musicEnabled ? 0.3 : 0;
+    if (this.musicAudio) this.musicAudio.muted = !this.musicEnabled;
     return this.musicEnabled;
   }
 
@@ -70,7 +84,15 @@ class SoundSystem {
   }
 
   getBPM() {
-    return this.currentTrack ? this.currentTrack.bpm : 128;
+    if (this.currentTrack && this.currentTrack.bpm) return this.currentTrack.bpm;
+    const idx = this._currentLevelIndex;
+    if (idx != null && MUSIC_TRACKS[idx]) return MUSIC_TRACKS[idx].bpm;
+    return 128;
+  }
+
+  getBPMForLevel(levelIndex) {
+    const idx = Math.min(levelIndex !== undefined ? levelIndex : 0, MUSIC_TRACKS.length - 1);
+    return MUSIC_TRACKS[idx] ? MUSIC_TRACKS[idx].bpm : 128;
   }
 
   isOnBeat(subdivision) {
@@ -422,68 +444,46 @@ class SoundSystem {
     return tracks[Math.min(levelIndex, tracks.length - 1)];
   }
 
-  // ==================== MUSIC ENGINE ====================
+  // ==================== MUSIC ENGINE (MP3 + beat sync) ====================
 
   startMusic(levelSpeed, levelIndex) {
     this.stopMusic();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.enabled) return;
 
-    const track = this.getTrack(levelIndex !== undefined ? levelIndex : 0);
-    this.currentTrack = track;
+    const idx = Math.min(levelIndex !== undefined ? levelIndex : 0, MUSIC_TRACKS.length - 1);
+    const meta = MUSIC_TRACKS[idx];
+    if (!meta || !meta.url) return;
+
+    this._currentLevelIndex = idx;
+    this.currentTrack = { bpm: meta.bpm };
     this.musicStep = 0;
-    this.filterLFO = 0;
 
-    const beatDuration = 60 / track.bpm;
-    const stepDuration = beatDuration / 4; // 16th notes
+    this.init();
+    if (!this.ctx) return;
 
-    // Start pad if applicable
-    if (track.pad && track.padChord) {
-      this.startPad(track);
+    const audio = new Audio(meta.url);
+    audio.loop = true;
+    audio.volume = 1;
+
+    try {
+      this.musicSource = this.ctx.createMediaElementSource(audio);
+      this.musicSource.connect(this.musicGain);
+    } catch (e) {
+      audio.connect = null;
     }
 
-    this.musicInterval = setInterval(() => {
-      if (!this.enabled || !this.musicEnabled) return;
-      const t = this.ctx.currentTime;
-      const step = this.musicStep % 16;
-      this.filterLFO += 0.04;
+    this.musicAudio = audio;
+    audio.muted = !this.musicEnabled;
+    audio.play().catch(() => {});
 
-      // Kick drum
-      if (track.kick[step]) {
-        this.playKick(t, track.style);
-      }
+    const bpm = meta.bpm;
+    const stepsPerBeat = 4;
 
-      // Snare
-      if (track.snare[step]) {
-        this.playSnare(t, track.style);
-      }
-
-      // Hi-hat (closed)
-      if (track.hihat[step]) {
-        this.playHihat(t, false, track.style);
-      }
-
-      // Open hi-hat
-      if (track.openHat[step]) {
-        this.playHihat(t, true, track.style);
-      }
-
-      // Bass
-      if (track.bass[step]) {
-        const noteIdx = Math.floor(this.musicStep / 2) % track.bassNotes.length;
-        this.playBassNote(t, track.bassNotes[noteIdx], stepDuration * 2, track.bassType);
-      }
-
-      // Arp / Synth
-      if (track.arp[step]) {
-        const noteIdx = (this.musicStep) % track.arpNotes.length;
-        this.playSynthNote(t, track.arpNotes[noteIdx], stepDuration * 1.5, track.synthType);
-      }
-
-      // Per-style extras
-      this.playExtras(t, step, track, stepDuration);
-
-      this.musicStep++;
-    }, stepDuration * 1000);
+    this.syncInterval = setInterval(() => {
+      if (!this.musicAudio || this.musicAudio.paused) return;
+      const t = this.musicAudio.currentTime;
+      this.musicStep = Math.floor(t * (bpm / 60) * stepsPerBeat);
+    }, 50);
   }
 
   // ==================== DRUM INSTRUMENTS ====================
@@ -1177,6 +1177,17 @@ class SoundSystem {
       clearInterval(this.padInterval);
       this.padInterval = null;
     }
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
+    if (this.musicAudio) {
+      this.musicAudio.pause();
+      this.musicAudio.currentTime = 0;
+      this.musicAudio.src = '';
+      this.musicAudio = null;
+    }
+    this.musicSource = null;
     this.musicStep = 0;
     this.currentTrack = null;
   }

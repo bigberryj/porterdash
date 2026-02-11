@@ -43,6 +43,7 @@ const LEVELS = [];
 LEVELS.push({
   name: "First Steps",
   speed: 6,
+  syncToMusic: true,
   colors: {
     bg1: '#1a0000',
     bg2: '#330000',
@@ -110,6 +111,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Neon Fields",
   speed: 7,
+  syncToMusic: true,
   colors: {
     bg1: '#001a00',
     bg2: '#003300',
@@ -184,6 +186,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Cyber Pulse",
   speed: 7.5,
+  syncToMusic: true,
   colors: {
     bg1: '#000a1a',
     bg2: '#001433',
@@ -248,6 +251,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Magenta Madness",
   speed: 8,
+  syncToMusic: true,
   colors: {
     bg1: '#1a0015',
     bg2: '#33002a',
@@ -313,6 +317,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Purple Reign",
   speed: 8.5,
+  syncToMusic: true,
   colors: {
     bg1: '#0d001a',
     bg2: '#1a0033',
@@ -376,6 +381,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Solar Flare",
   speed: 9,
+  syncToMusic: true,
   colors: {
     bg1: '#1a0e00',
     bg2: '#331c00',
@@ -441,6 +447,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Deep Freeze",
   speed: 9.5,
+  syncToMusic: true,
   colors: {
     bg1: '#000d1a',
     bg2: '#001a33',
@@ -507,6 +514,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Crimson Storm",
   speed: 10,
+  syncToMusic: true,
   colors: {
     bg1: '#120000',
     bg2: '#250000',
@@ -575,6 +583,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Toxic Waste",
   speed: 10.5,
+  syncToMusic: true,
   colors: {
     bg1: '#0a1a00',
     bg2: '#153300',
@@ -646,6 +655,7 @@ LEVELS.push({
 LEVELS.push({
   name: "Infinity",
   speed: 11,
+  syncToMusic: true,
   colors: {
     bg1: '#0a0015',
     bg2: '#15002a',
