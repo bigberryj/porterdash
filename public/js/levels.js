@@ -14,7 +14,8 @@
  *  - spike_up: Inverted spike from ceiling
  *  - block, pillar, spike_block: Solid blocks
  *  - portal: Ring portal (visual)
- *  - portal_fly: Enter flight mode (hold jump to rise, release to fall). Use flightBeats: N for segment length.
+ *  - portal_fly: Enter flight mode (hold jump to rise, release to fall). Use flightBeats: N, optional safeLandingBeats: N (default 8).
+ *    Level options: portalEnterEffect, portalExitEffect — one of 'flash', 'burst', 'warp', 'ripple', 'zoom', 'stars'.
  *  - portal_gravity: Invert gravity for N beats (ceiling becomes floor). Use gravityBeats: N.
  *  - flame_pit, flamethrower: Fire hazards.
  *  - moving_block: Block that moves. Use axis: 'y'|'x', amp: blocks, period: frames (e.g. 60).
@@ -62,6 +63,8 @@ LEVELS.push({
   },
   bgTheme: 'mountains',
   bgCreatures: ['bat', 'fireball'],
+  portalEnterEffect: 'burst',
+  portalExitEffect: 'flash',
   ground: [
     { type: 'flat', x: 0, len: 15 },
     { type: 'curve', x: 15, len: 14, rise: 1 },
@@ -130,6 +133,8 @@ LEVELS.push({
   },
   bgTheme: 'mountains',
   bgCreatures: ['ghost', 'wisp'],
+  portalEnterEffect: 'warp',
+  portalExitEffect: 'stars',
   ground: [
     { type: 'flat', x: 0, len: 12 },
     { type: 'curve', x: 12, len: 12, rise: 1 },

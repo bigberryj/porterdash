@@ -3,6 +3,13 @@
  * Handles rendering, physics, collision, and game state
  */
 
+function hexToRgba(hex, a) {
+  if (typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(255,170,0,${a})`;
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 class GameEngine {
   constructor(canvas) {
     this.canvas = canvas;
@@ -45,6 +52,7 @@ class GameEngine {
     // Effects
     this.deathParticles = [];
     this.portalEffects = [];
+    this.portalTransitionEffect = null;
     this.groundParticles = [];
     this.screenShake = 0;
     this.doubleJumpFlash = 0;
@@ -168,15 +176,37 @@ class GameEngine {
 
   buildObstacles() {
     this.obstacles = [];
+    this.flightExitSafeZones = [];
     const bs = this.BLOCK_SIZE;
     const maxH = this.MAX_OBSTACLE_HEIGHT * bs;
     this.collectiblesTotal = 0;
+
+    for (const ob of this.level.obstacles) {
+      if (ob.type === 'portal_fly') {
+        const flightBeats = ob.flightBeats || 45;
+        const safeBeats = ob.safeLandingBeats != null ? ob.safeLandingBeats : 8;
+        this.flightExitSafeZones.push({
+          start: ob.x + flightBeats,
+          end: ob.x + flightBeats + safeBeats,
+        });
+      }
+    }
+
+    function isInFlightExitSafeZone(engine, beatX, widthBeats) {
+      if (!engine.flightExitSafeZones || !engine.flightExitSafeZones.length) return false;
+      const endX = beatX + (widthBeats || 1);
+      for (const z of engine.flightExitSafeZones) {
+        if (beatX < z.end && endX > z.start) return true;
+      }
+      return false;
+    }
 
     for (const ob of this.level.obstacles) {
       if (ob.type === 'collectible') {
         this.collectiblesTotal++;
       }
       const baseX = (ob.x + this.leadBeats) * bs;
+      const beatX = ob.x;
       const rawW = (ob.w || 1) * bs;
       const rawH = (ob.h || 1) * bs;
       // Clamp block height to max reachable
@@ -185,12 +215,14 @@ class GameEngine {
 
       switch (ob.type) {
         case 'spike':
+          if (isInFlightExitSafeZone(this, beatX, 1)) break;
           this.obstacles.push({
             type: 'spike', x: baseX,
             y: this.groundY - bs, w: bs, h: bs, deadly: true,
           });
           break;
         case 'double_spike':
+          if (isInFlightExitSafeZone(this, beatX, 2)) break;
           this.obstacles.push({
             type: 'spike', x: baseX, y: this.groundY - bs, w: bs, h: bs, deadly: true,
           });
@@ -199,6 +231,7 @@ class GameEngine {
           });
           break;
         case 'triple_spike':
+          if (isInFlightExitSafeZone(this, beatX, 3)) break;
           for (let i = 0; i < 3; i++) {
             this.obstacles.push({
               type: 'spike', x: baseX + i * bs,
@@ -220,7 +253,7 @@ class GameEngine {
           });
           break;
         case 'spike_block':
-          // Block 1 high + spike on top = 2 blocks total (clearable with single jump)
+          if (isInFlightExitSafeZone(this, beatX, 2)) break;
           this.obstacles.push({
             type: 'block', x: baseX,
             y: this.groundY - bs, w: bs * 2, h: bs, deadly: false,
@@ -250,24 +283,28 @@ class GameEngine {
           break;
         }
         case 'flame_pit':
+          if (isInFlightExitSafeZone(this, beatX, ob.w || 2)) break;
           this.obstacles.push({
             type: 'flame_pit', x: baseX,
             y: this.groundY - 50, w: (ob.w || 2) * bs, h: 55, deadly: true,
           });
           break;
         case 'flamethrower':
+          if (isInFlightExitSafeZone(this, beatX, ob.w || 1)) break;
           this.obstacles.push({
             type: 'flamethrower', x: baseX,
             y: -10, w: (ob.w || 1) * bs, h: 75, deadly: true,
           });
           break;
         case 'spike_up':
+          if (isInFlightExitSafeZone(this, beatX, 1)) break;
           this.obstacles.push({
             type: 'spike_up', x: baseX,
             y: 0, w: bs, h: bs, deadly: true,
           });
           break;
         case 'moving_block': {
+          if (isInFlightExitSafeZone(this, beatX, ob.w || 1)) break;
           const amp = (ob.amp || 1) * bs;
           const period = (ob.period || 60) * 2;
           const axis = ob.axis || 'y';
@@ -375,6 +412,8 @@ class GameEngine {
           p.flightMode = true;
           p.flightEndScrollX = this.scrollX + ob.flightBeats * bs;
           for (let i = 0; i < 12; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          const enterEffect = this.level.portalEnterEffect || 'burst';
+          this.portalTransitionEffect = { type: enterEffect, progress: 0, duration: 40, isEnter: true };
         }
       }
     }
@@ -388,7 +427,9 @@ class GameEngine {
             p.y + p.height / 2 >= ob.y && p.y + p.height / 2 <= ob.y + ob.h) {
           p.flightMode = false;
           p.vy = 0;
-          this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          for (let i = 0; i < 12; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          const exitEffect = this.level.portalExitEffect || 'flash';
+          this.portalTransitionEffect = { type: exitEffect, progress: 0, duration: 40, isEnter: false };
           break;
         }
       }
@@ -701,6 +742,12 @@ class GameEngine {
       p.x += p.vx; p.y += p.vy; p.life -= p.decay;
       if (p.life <= 0) this.portalEffects.splice(i, 1);
     }
+    if (this.portalTransitionEffect) {
+      this.portalTransitionEffect.progress++;
+      if (this.portalTransitionEffect.progress >= this.portalTransitionEffect.duration) {
+        this.portalTransitionEffect = null;
+      }
+    }
   }
 
   // ---- Drawing ----
@@ -725,6 +772,7 @@ class GameEngine {
     if (!this.player.dead) this.drawPlayer(rainbowHue);
 
     this.drawEffects();
+    if (this.portalTransitionEffect) this.drawPortalTransitionEffect();
     ctx.restore();
   }
 
@@ -1294,6 +1342,95 @@ class GameEngine {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  drawPortalTransitionEffect() {
+    const e = this.portalTransitionEffect;
+    if (!e) return;
+    const ctx = this.ctx;
+    const w = this.displayWidth;
+    const h = this.displayHeight;
+    const cx = w / 2;
+    const cy = h / 2;
+    const t = e.progress / e.duration;
+    const colors = this.level ? this.level.colors : {};
+    const color = colors.portal || colors.accent1 || '#ffaa00';
+    const color2 = colors.accent2 || colors.accent1 || '#ff6600';
+
+    if (e.type === 'flash') {
+      const alpha = e.isEnter ? (t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85) : (t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha * 0.7));
+      ctx.fillRect(0, 0, w, h);
+    } else if (e.type === 'burst') {
+      const r = Math.max(w, h) * (0.3 + t * 0.9);
+      const alpha = t < 0.5 ? 0.6 * (1 - t * 2) : 0;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 8;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (e.type === 'warp') {
+      const scale = 1 + (e.isEnter ? t * 0.4 : (1 - t) * 0.4);
+      const alpha = Math.max(0, 0.4 * (1 - t));
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+      ctx.fillRect(-w, -h, w * 2, h * 2);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    } else if (e.type === 'ripple') {
+      const rings = 4;
+      for (let i = 0; i < rings; i++) {
+        const phase = (t * 2 + i / rings) % 1;
+        const r = Math.max(w, h) * 0.2 + phase * Math.max(w, h) * 0.6;
+        const alpha = (1 - phase) * 0.5 * (1 - t);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (e.type === 'zoom') {
+      const alpha = t < 0.3 ? t / 0.3 : 1 - (t - 0.3) / 0.7;
+      const inner = Math.max(w, h) * 0.1 * (1 - t);
+      const grad = ctx.createRadialGradient(cx, cy, inner, cx, cy, Math.max(w, h) * 0.8);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(0.5, hexToRgba(color, 0.3));
+      grad.addColorStop(1, hexToRgba(color, 0.6));
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
+    } else if (e.type === 'stars') {
+      const n = 20;
+      for (let i = 0; i < n; i++) {
+        const angle = (i / n) * Math.PI * 2 + t * 4;
+        const dist = (0.1 + t * 0.9) * Math.max(w, h) * 0.6;
+        const x = cx + Math.cos(angle) * dist;
+        const y = cy + Math.sin(angle) * dist;
+        const size = 3 + (1 - t) * 4;
+        const alpha = (1 - t) * 0.8;
+        ctx.fillStyle = i % 2 === 0 ? color : color2;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      const alpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha * 0.5));
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
+    }
   }
 
   // Demo renderer for menu
