@@ -14,6 +14,7 @@ class MenuSystem {
 
     this.progressBar = document.getElementById('progress-bar');
     this.progressText = document.getElementById('progress-text');
+    this.starsHud = document.getElementById('stars-hud');
     this.levelLabel = document.getElementById('level-label');
     this.deathProgress = document.getElementById('death-progress');
     this.completeStars = document.getElementById('complete-stars');
@@ -273,16 +274,21 @@ class MenuSystem {
     this.deathProgress.textContent = `Progress: ${Math.floor(progress * 100)}%`;
   }
 
-  showComplete(levelIndex) {
+  showComplete(levelIndex, engine) {
     this.completeOverlay.classList.remove('hidden');
 
-    // Calculate stars based on attempts
     const attempts = (this.progress.attempts[levelIndex] || 0) + 1;
     let stars = 3;
     if (attempts > 5) stars = 2;
     if (attempts > 15) stars = 1;
 
-    this.completeStars.textContent = this.getStarDisplay(stars);
+    let text = this.getStarDisplay(stars);
+    if (engine && engine.getCollectiblesTotal && engine.getCollectiblesTotal() > 0) {
+      const c = engine.getCollectiblesCount();
+      const t = engine.getCollectiblesTotal();
+      text += `  ·  Collectibles: ${c}/${t}`;
+    }
+    this.completeStars.textContent = text;
 
     // Save progress
     if (!this.progress.completed[levelIndex] || this.progress.completed[levelIndex] < stars) {
@@ -299,10 +305,20 @@ class MenuSystem {
     this.pauseOverlay.classList.add('hidden');
   }
 
-  updateHUD(progress) {
+  updateHUD(progress, engine) {
     const pct = Math.floor(progress * 100);
     this.progressBar.style.width = `${pct}%`;
     this.progressText.textContent = `${pct}%`;
+    if (this.starsHud) {
+      const total = engine && engine.getCollectiblesTotal ? engine.getCollectiblesTotal() : 0;
+      if (total > 0) {
+        const count = engine.getCollectiblesCount();
+        this.starsHud.textContent = `★ ${count}/${total}`;
+        this.starsHud.classList.remove('hidden');
+      } else {
+        this.starsHud.classList.add('hidden');
+      }
+    }
   }
 
   recordAttempt(levelIndex) {

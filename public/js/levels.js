@@ -15,8 +15,12 @@
  *  - block, pillar, spike_block: Solid blocks
  *  - portal: Ring portal (visual)
  *  - portal_fly: Enter flight mode (hold jump to rise, release to fall). Use flightBeats: N for segment length.
- *  - flame_pit: Fire shooting up from pit (optional w: width in blocks)
- *  - flamethrower: Fire from ceiling (optional w: width in blocks)
+ *  - portal_gravity: Invert gravity for N beats (ceiling becomes floor). Use gravityBeats: N.
+ *  - flame_pit, flamethrower: Fire hazards.
+ *  - moving_block: Block that moves. Use axis: 'y'|'x', amp: blocks, period: frames (e.g. 60).
+ *  - platform: Floating platform in air. Use w, h, gap: blocks above ground.
+ *  - collectible: Star to collect (counts toward HUD and completion).
+ *  - speed_pad: Touch to change scroll speed. Use speedMult: 1.4 (fast) or 0.7 (slow), durationBeats: N.
  *
  * Optional ground array for variable terrain (beats). If omitted, ground is flat.
  *  - { type: 'flat', x: 0, len: 20 }
@@ -139,12 +143,17 @@ LEVELS.push({
     { type: 'spike', x: 34 },
     { type: 'spike', x: 35 },
     { type: 'portal', x: 39 },
+    { type: 'collectible', x: 41 },
+    { type: 'moving_block', x: 42, w: 1, h: 1, axis: 'y', amp: 1, period: 80 },
     { type: 'block', x: 43, w: 3, h: 2 },
     { type: 'spike', x: 47 },
     { type: 'spike', x: 48 },
     { type: 'block', x: 52, w: 2, h: 1 },
+    { type: 'platform', x: 55, w: 2, h: 1, gap: 1 },
     { type: 'double_spike', x: 56 },
+    { type: 'collectible', x: 58 },
     { type: 'spike', x: 60 },
+    { type: 'speed_pad', x: 62, speedMult: 1.3, durationBeats: 12 },
     { type: 'pillar', x: 64 },
     { type: 'spike', x: 68 },
     { type: 'spike', x: 69 },
@@ -209,7 +218,9 @@ LEVELS.push({
     { type: 'flamethrower', x: 58, w: 1 },
     { type: 'triple_spike', x: 62 },
     { type: 'portal', x: 67 },
+    { type: 'portal_gravity', x: 69, gravityBeats: 35 },
     { type: 'block', x: 71, w: 2, h: 2 },
+    { type: 'collectible', x: 73 },
     { type: 'spike_block', x: 75 },
     { type: 'spike', x: 79 },
     { type: 'double_spike', x: 83 },
@@ -263,7 +274,9 @@ LEVELS.push({
     { type: 'spike', x: 36 },
     { type: 'spike', x: 37 },
     { type: 'block', x: 41, w: 3, h: 3 },
+    { type: 'platform', x: 44, w: 1, h: 1, gap: 2 },
     { type: 'double_spike', x: 45 },
+    { type: 'collectible', x: 47 },
     { type: 'spike_block', x: 49 },
     { type: 'spike', x: 53 },
     { type: 'block', x: 56, w: 1, h: 4 },

@@ -94,7 +94,15 @@ class GameEngine {
     this.player.hasDoubleJumped = false;
     this.player.flightMode = false;
     this.player.flightEndScrollX = 0;
+    this.player.gravityFlipped = false;
+    this.player.gravityFlipEndScrollX = 0;
     this.triggeredFlightPortals = new Set();
+    this.triggeredGravityPortals = new Set();
+    this.triggeredSpeedPads = new Set();
+    this.speedModifier = 1;
+    this.speedModifierEndScrollX = 0;
+    this.collectedStars = new Set();
+    this.collectiblesTotal = 0;
 
     this.buildObstacles();
     this.buildGroundSegments();
@@ -147,8 +155,12 @@ class GameEngine {
     this.obstacles = [];
     const bs = this.BLOCK_SIZE;
     const maxH = this.MAX_OBSTACLE_HEIGHT * bs;
+    this.collectiblesTotal = 0;
 
     for (const ob of this.level.obstacles) {
+      if (ob.type === 'collectible') {
+        this.collectiblesTotal++;
+      }
       const baseX = (ob.x + this.leadBeats) * bs;
       const rawW = (ob.w || 1) * bs;
       const rawH = (ob.h || 1) * bs;
@@ -234,6 +246,45 @@ class GameEngine {
             y: 0, w: bs, h: bs, deadly: true,
           });
           break;
+        case 'moving_block': {
+          const amp = (ob.amp || 1) * bs;
+          const period = (ob.period || 60) * 2;
+          const axis = ob.axis || 'y';
+          const baseY = this.groundY - (ob.h || 1) * bs;
+          this.obstacles.push({
+            type: 'block', x: baseX, y: baseY, w: (ob.w || 1) * bs, h: (ob.h || 1) * bs, deadly: false,
+            baseX, baseY, amp, period, axis, moving: true,
+          });
+          break;
+        }
+        case 'platform':
+          this.obstacles.push({
+            type: 'block', x: baseX,
+            y: this.groundY - (ob.h || 1) * bs - (ob.gap || 1) * bs, w: (ob.w || 2) * bs, h: (ob.h || 1) * bs, deadly: false,
+            isPlatform: true,
+          });
+          break;
+        case 'collectible':
+          this.obstacles.push({
+            type: 'collectible', x: baseX,
+            y: this.groundY - bs * 2.5, w: 24, h: 24, deadly: false,
+            id: ob.x,
+          });
+          break;
+        case 'speed_pad':
+          this.obstacles.push({
+            type: 'speed_pad', x: baseX,
+            y: this.groundY - bs * 0.5, w: (ob.w || 1) * bs, h: bs, deadly: false,
+            speedMult: ob.speedMult ?? 1.4, durationBeats: ob.durationBeats ?? 15, id: ob.x,
+          });
+          break;
+        case 'portal_gravity':
+          this.obstacles.push({
+            type: 'portal_gravity', x: baseX,
+            y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
+            gravityBeats: ob.gravityBeats || 40,
+          });
+          break;
       }
     }
   }
@@ -244,6 +295,14 @@ class GameEngine {
     return Math.min(1, this.scrollX / totalPx);
   }
 
+  getCollectiblesCount() {
+    return this.collectedStars ? this.collectedStars.size : 0;
+  }
+
+  getCollectiblesTotal() {
+    return this.collectiblesTotal || 0;
+  }
+
   update() {
     if (this.state !== 'playing') return;
 
@@ -252,8 +311,25 @@ class GameEngine {
       this.rainbowHue = (this.rainbowHue + 0.5) % 360;
     }
 
-    // Scroll
-    this.scrollX += this.speed;
+    // Update moving blocks
+    for (const ob of this.obstacles) {
+      if (ob.moving && ob.baseY != null) {
+        const t = this.time / (ob.period || 120);
+        const offset = Math.sin(t * Math.PI * 2) * (ob.amp || 40);
+        if (ob.axis === 'x') {
+          ob.x = ob.baseX + offset;
+        } else {
+          ob.y = ob.baseY + offset;
+        }
+      }
+    }
+
+    // Scroll (with speed pad modifier)
+    const effectiveSpeed = this.speed * (this.speedModifier || 1);
+    if (this.scrollX >= this.speedModifierEndScrollX && this.speedModifier !== 1) {
+      this.speedModifier = 1;
+    }
+    this.scrollX += effectiveSpeed;
 
     // Check level complete
     if (this.getProgress() >= 1) {
@@ -288,6 +364,28 @@ class GameEngine {
       p.vy = 0;
     }
 
+    // Portal gravity trigger
+    for (const ob of this.obstacles) {
+      if (ob.type === 'portal_gravity' && ob.gravityBeats != null && !this.triggeredGravityPortals.has(ob.x)) {
+        const ox = ob.x - this.scrollX;
+        const cx = ox + ob.w / 2;
+        if (cx >= p.x + p.width / 2 - 15 && cx <= p.x + p.width / 2 + 15 &&
+            p.y + p.height / 2 >= ob.y && p.y + p.height / 2 <= ob.y + ob.h) {
+          this.triggeredGravityPortals.add(ob.x);
+          p.gravityFlipped = true;
+          p.gravityFlipEndScrollX = this.scrollX + ob.gravityBeats * bs;
+          this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+        }
+      }
+    }
+
+    if (p.gravityFlipped && this.scrollX >= p.gravityFlipEndScrollX) {
+      p.gravityFlipped = false;
+      p.vy = 0;
+    }
+
+    const CEILING_Y = 55;
+
     // --- Flight mode physics (Geometry Dash style: hold to rise, release to fall) ---
     if (p.flightMode) {
       const FLIGHT_UP = -7;
@@ -300,6 +398,34 @@ class GameEngine {
       p.y += p.vy;
       p.rotation = p.vy < 0 ? -0.3 : 0.3;
       p.onGround = false;
+    } else if (p.gravityFlipped) {
+      // --- Upside-down: gravity toward ceiling ---
+      if (this.jumpPressed) {
+        if (p.onGround) {
+          p.vy = this.JUMP_FORCE;
+          p.onGround = false;
+          p.hasDoubleJumped = false;
+        } else if (!p.hasDoubleJumped) {
+          p.vy = this.DOUBLE_JUMP_FORCE;
+          p.hasDoubleJumped = true;
+          this.doubleJumpFlash = 8;
+        }
+      }
+      this.jumpPressed = false;
+      p.vy -= this.GRAVITY;
+      p.y += p.vy;
+      const wasOnGround = p.onGround;
+      p.onGround = false;
+      if (p.y <= CEILING_Y) {
+        p.y = CEILING_Y;
+        p.vy = 0;
+        if (!wasOnGround) sound.playLand();
+        p.onGround = true;
+        p.hasDoubleJumped = false;
+      }
+      if (p.y > this.displayHeight + 80) this.die();
+      if (!p.onGround) p.rotation -= 0.12;
+      else p.rotation = Math.round(p.rotation / (Math.PI / 2)) * (Math.PI / 2);
     } else {
       // --- Normal / jump ---
       if (this.jumpPressed) {
@@ -394,6 +520,25 @@ class GameEngine {
         }
         continue;
       }
+
+      if (ob.type === 'collectible') {
+        if (!this.collectedStars.has(ob.id) && px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
+          this.collectedStars.add(ob.id);
+          if (typeof sound !== 'undefined' && sound.playCollect) sound.playCollect();
+        }
+        continue;
+      }
+
+      if (ob.type === 'speed_pad') {
+        if (!this.triggeredSpeedPads.has(ob.id) && px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
+          this.triggeredSpeedPads.add(ob.id);
+          this.speedModifier = ob.speedMult;
+          this.speedModifierEndScrollX = this.scrollX + (ob.durationBeats || 15) * this.BLOCK_SIZE;
+        }
+        continue;
+      }
+
+      if (ob.type === 'portal_gravity') continue;
 
       // AABB collision
       if (px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
@@ -673,10 +818,58 @@ class GameEngine {
         case 'block': this.drawBlock(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'portal': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'portal_fly': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'portal_gravity': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'flame_pit': this.drawFlamePit(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'flamethrower': this.drawFlamethrower(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'collectible': if (!this.collectedStars.has(ob.id)) this.drawCollectible(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'speed_pad': this.drawSpeedPad(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
       }
     }
+  }
+
+  drawCollectible(ctx, x, y, w, h, colors, rainbowHue) {
+    const cx = x + w / 2, cy = y + h / 2;
+    const pulse = 0.9 + Math.sin(this.time * 0.1) * 0.1;
+    const r = (Math.min(w, h) / 2) * pulse;
+    const starColor = rainbowHue !== undefined ? `hsl(${rainbowHue + 45}, 100%, 60%)` : (colors.portal || colors.accent2);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(this.time * 0.02);
+    ctx.strokeStyle = starColor;
+    ctx.fillStyle = starColor;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = starColor;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const ax = Math.cos(a) * r;
+      const ay = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(ax, ay);
+      else ctx.lineTo(ax, ay);
+      const innerA = a + Math.PI / 5;
+      ctx.lineTo(Math.cos(innerA) * r * 0.4, Math.sin(innerA) * r * 0.4);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  drawSpeedPad(ctx, x, y, w, h, colors, rainbowHue) {
+    const active = this.speedModifier !== 1 && this.scrollX < this.speedModifierEndScrollX;
+    const padColor = rainbowHue !== undefined
+      ? `hsl(${rainbowHue + 30}, 90%, 50%)` : (colors.accent2 || '#ffaa00');
+    ctx.fillStyle = active ? padColor : (rainbowHue !== undefined ? `hsla(${rainbowHue}, 60%, 40%, 0.7)` : 'rgba(180, 140, 0, 0.7)');
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = padColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.speedModifier > 1 ? 'FAST' : 'SLOW', x + w / 2, y + h / 2 + 4);
   }
 
   drawFlamePit(ctx, x, y, w, h, colors, rainbowHue) {
@@ -850,17 +1043,23 @@ class GameEngine {
     const p = this.player;
     const colors = this.level.colors;
 
-    // Trail
+    // Trail (longer streaks in flight mode)
+    const trailLen = p.flightMode ? 22 : 15;
+    const trailSizeMult = p.flightMode ? 0.5 : 0.4;
     for (let i = 0; i < p.trail.length; i++) {
       const t = p.trail[i];
-      const alpha = (1 - t.age / 20) * 0.4;
+      const alpha = (1 - t.age / trailLen) * 0.4;
       if (alpha <= 0) continue;
-      const size = p.width * (1 - t.age / 20) * 0.4;
+      const size = p.width * (1 - t.age / trailLen) * trailSizeMult;
       const trailColor = rainbowHue !== undefined
         ? `hsla(${rainbowHue + i * 10}, 100%, 60%, ${alpha})` : colors.accent1;
       ctx.globalAlpha = alpha;
       ctx.fillStyle = trailColor;
-      ctx.fillRect(t.x - size / 2, t.y - size / 2, size, size);
+      if (p.flightMode) {
+        ctx.fillRect(t.x - size, t.y - size * 0.4, size * 2, size * 0.8);
+      } else {
+        ctx.fillRect(t.x - size / 2, t.y - size / 2, size, size);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -868,6 +1067,7 @@ class GameEngine {
     ctx.save();
     ctx.translate(p.x + p.width / 2, p.y + p.height / 2);
     ctx.rotate(p.rotation);
+    if (p.gravityFlipped) ctx.rotate(Math.PI);
 
     const half = p.width / 2;
 
@@ -878,7 +1078,6 @@ class GameEngine {
       ctx.shadowBlur = 25 * flashAlpha;
     }
 
-    // Glow
     const glowColor = rainbowHue !== undefined
       ? `hsl(${rainbowHue}, 100%, 60%)` : colors.accent1;
     if (this.doubleJumpFlash <= 0) {
@@ -886,42 +1085,83 @@ class GameEngine {
       ctx.shadowBlur = 12;
     }
 
-    // Body
-    ctx.fillStyle = rainbowHue !== undefined
-      ? `hsl(${rainbowHue + 120}, 80%, 55%)` : '#44ff44';
-    ctx.fillRect(-half, -half, p.width, p.height);
-    ctx.shadowBlur = 0;
-
-    // Border
-    ctx.strokeStyle = rainbowHue !== undefined
-      ? `hsl(${rainbowHue + 120}, 100%, 75%)` : '#88ff88';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(-half, -half, p.width, p.height);
-
-    // Inner square
-    const innerSize = p.width * 0.5;
-    ctx.fillStyle = rainbowHue !== undefined
-      ? `hsl(${rainbowHue + 120}, 90%, 25%)` : '#116611';
-    ctx.fillRect(-innerSize / 2, -innerSize / 2, innerSize, innerSize);
-    ctx.strokeStyle = rainbowHue !== undefined
-      ? `hsl(${rainbowHue + 120}, 80%, 55%)` : '#44ff44';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(-innerSize / 2, -innerSize / 2, innerSize, innerSize);
-
-    // Eye
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(2, -6, 7, 7);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(5, -4, 3, 3);
-
-    // Double jump available indicator (small glow dot when in air and can double jump)
-    if (!p.onGround && !p.hasDoubleJumped) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    if (p.flightMode) {
+      // Ship / UFO: elongated body with wings
+      const shipW = 26, shipH = 20;
+      ctx.fillStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 80%, 50%)` : '#33dd33';
       ctx.beginPath();
-      ctx.arc(0, half + 5, 3, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, shipW, shipH, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 100%, 70%)` : '#66ff66';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 90%, 25%)` : '#0a4a0a';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, shipW * 0.5, shipH * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(6, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(7, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 120}, 100%, 60%, 0.6)` : 'rgba(100, 255, 100, 0.6)';
+      ctx.beginPath();
+      ctx.moveTo(-shipW - 4, -4);
+      ctx.lineTo(-shipW + 2, 0);
+      ctx.lineTo(-shipW - 4, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-shipW - 4, -4);
+      ctx.lineTo(-shipW + 2, 0);
+      ctx.lineTo(-shipW - 4, 4);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(shipW + 4, -4);
+      ctx.lineTo(shipW - 2, 0);
+      ctx.lineTo(shipW + 4, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      // Normal cube
+      ctx.fillStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 80%, 55%)` : '#44ff44';
+      ctx.fillRect(-half, -half, p.width, p.height);
+      ctx.strokeStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 100%, 75%)` : '#88ff88';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-half, -half, p.width, p.height);
+      const innerSize = p.width * 0.5;
+      ctx.fillStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 90%, 25%)` : '#116611';
+      ctx.fillRect(-innerSize / 2, -innerSize / 2, innerSize, innerSize);
+      ctx.strokeStyle = rainbowHue !== undefined
+        ? `hsl(${rainbowHue + 120}, 80%, 55%)` : '#44ff44';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-innerSize / 2, -innerSize / 2, innerSize, innerSize);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(2, -6, 7, 7);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(5, -4, 3, 3);
+      if (!p.onGround && !p.hasDoubleJumped) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.beginPath();
+        ctx.arc(0, half + 5, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
+    ctx.shadowBlur = 0;
     ctx.restore();
   }
 

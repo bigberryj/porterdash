@@ -195,7 +195,7 @@
     } else if (currentScreen === 'playing') {
       engine.update();
       engine.draw();
-      menu.updateHUD(engine.getProgress());
+      menu.updateHUD(engine.getProgress(), engine);
 
       if (engine.state === 'dead') {
         currentScreen = 'dead';
@@ -203,7 +203,7 @@
         menu.recordAttempt(currentLevel);
       } else if (engine.state === 'complete') {
         currentScreen = 'complete';
-        menu.showComplete(currentLevel);
+        menu.showComplete(currentLevel, engine);
       }
     } else if (currentScreen === 'paused') {
       engine.draw();

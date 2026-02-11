@@ -206,6 +206,16 @@ body {
   display: none;
 }
 
+#stars-hud {
+  margin-left: 12px;
+  color: #ffd700;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 14px;
+}
+#stars-hud.hidden {
+  display: none;
+}
+
 #progress-bar-container {
   flex: 1;
   max-width: 300px;
