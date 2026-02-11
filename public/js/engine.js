@@ -21,7 +21,7 @@ class GameEngine {
     this.GRAVITY = 1.1;
     this.JUMP_FORCE = -14;
     this.DOUBLE_JUMP_FORCE = -12;
-    this.MAX_OBSTACLE_HEIGHT = 3; // blocks - max height player can reach with double jump
+    this.MAX_OBSTACLE_HEIGHT = 2; // blocks - max jump-over height so levels are achievable
     this.GROUND_HEIGHT_RATIO = 0.18;
 
     // State
@@ -149,6 +149,21 @@ class GameEngine {
         this.groundSegments.push({ x: startX, endX, type: 'flat', y0: baseY, y1: baseY });
       }
     }
+    // Ensure ground extends to end of level (no floating when past last segment)
+    if (this.groundSegments.length > 0) {
+      let maxEnd = 0;
+      for (const seg of this.groundSegments) {
+        if (seg.endX > maxEnd) maxEnd = seg.endX;
+      }
+      if (maxEnd < totalPx) {
+        this.groundSegments.push({ x: maxEnd, endX: totalPx, type: 'flat', y0: baseY, y1: baseY });
+      }
+      // Ensure ground from start (if first segment doesn't start at 0)
+      const first = this.groundSegments[0];
+      if (first.x > 0) {
+        this.groundSegments.unshift({ x: 0, endX: first.x, type: 'flat', y0: baseY, y1: baseY });
+      }
+    }
   }
 
   getGroundY(worldX) {
@@ -239,7 +254,7 @@ class GameEngine {
           });
           break;
         case 'pillar':
-          // Capped pillar: max 3 blocks high (reachable with double jump)
+          // Capped at MAX_OBSTACLE_HEIGHT (2 blocks) so player can jump over
           this.obstacles.push({
             type: 'block', x: baseX,
             y: this.groundY - maxH, w: bs, h: maxH, deadly: false,
