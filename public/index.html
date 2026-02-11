@@ -33,6 +33,9 @@
 
     <!-- HUD -->
     <div id="hud" class="hidden">
+      <div id="hud-left">
+        <button id="menu-btn" title="Main menu">&#9776;</button>
+      </div>
       <div id="progress-bar-container">
         <div id="progress-bar"></div>
         <span id="progress-text">0%</span>
@@ -50,10 +53,7 @@
       <div id="death-content">
         <h2 id="death-title">CRASHED!</h2>
         <p id="death-progress"></p>
-        <div id="death-buttons">
-          <button class="menu-btn" id="retry-btn">RETRY</button>
-          <button class="menu-btn" id="menu-return-btn">MENU</button>
-        </div>
+        <p id="death-hint">Click anywhere to retry &middot; Escape or &#9776; for menu</p>
       </div>
     </div>
 

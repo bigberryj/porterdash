@@ -25,6 +25,10 @@
     if (e) e.preventDefault();
     initSound();
 
+    if (currentScreen === 'dead') {
+      retryLevel();
+      return;
+    }
     if (currentScreen === 'playing') {
       engine.handleInput('down');
     }
@@ -46,6 +50,7 @@
     if (e.code === 'Escape') {
       if (currentScreen === 'playing') pauseGame();
       else if (currentScreen === 'paused') resumeGame();
+      else if (currentScreen === 'dead') returnToMenu();
     }
     if (e.code === 'KeyR') {
       if (currentScreen === 'playing' || currentScreen === 'dead' || currentScreen === 'paused') {
@@ -127,8 +132,10 @@
     startLevel(idx);
   });
 
-  document.getElementById('retry-btn').addEventListener('click', retryLevel);
-  document.getElementById('menu-return-btn').addEventListener('click', returnToMenu);
+  document.getElementById('menu-btn').addEventListener('click', () => {
+    initSound();
+    returnToMenu();
+  });
 
   document.getElementById('next-btn').addEventListener('click', () => {
     const next = currentLevel + 1;
@@ -179,6 +186,7 @@
   function returnToMenu() {
     currentScreen = 'menu';
     engine.state = 'idle';
+    engine.loadLevel(0);
     menu.showMenu();
     sound.stopMusic();
   }
@@ -189,9 +197,13 @@
     requestAnimationFrame(gameLoop);
 
     if (currentScreen === 'menu' || currentScreen === 'levels') {
+      if (!engine.level) engine.loadLevel(0);
       demoScroll += 3;
-      demoHue = (demoHue + 0.3) % 360;
-      engine.drawDemo(demoScroll, demoHue);
+      engine.scrollX = demoScroll;
+      engine.time++;
+      if (engine.bg && engine.bg.update) engine.bg.update(engine.speed || 6, engine.scrollX);
+      engine.updateEffects();
+      engine.draw();
     } else if (currentScreen === 'playing') {
       engine.update();
       engine.draw();

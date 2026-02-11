@@ -80,11 +80,8 @@ class GameEngine {
     this.level = LEVELS[index];
     this.state = 'playing';
     this.scrollX = 0;
+    // Game scroll speed: always from level (playable). Music sync is for backgrounds/effects only.
     this.speed = this.level.speed;
-    if (this.level.syncToMusic && typeof sound !== 'undefined' && sound.getBPMForLevel) {
-      const bpm = sound.getBPMForLevel(index);
-      if (bpm > 0) this.speed = this.BLOCK_SIZE * bpm / 60;
-    }
     this.time = 0;
     this.rainbowHue = 0;
     this.deathParticles = [];
@@ -93,12 +90,8 @@ class GameEngine {
     this.screenShake = 0;
     this.doubleJumpFlash = 0;
 
-    if (this.level.syncToMusic && typeof sound !== 'undefined' && sound.getBPMForLevel) {
-      const bpm = sound.getBPMForLevel(index);
-      this.leadBeats = Math.ceil(5 * bpm / 60);
-    } else {
-      this.leadBeats = Math.ceil(5 * 60 * this.speed / this.BLOCK_SIZE);
-    }
+    // Lead-in beats (~5s of scroll before first obstacle)
+    this.leadBeats = Math.ceil(5 * 60 * this.speed / this.BLOCK_SIZE);
 
     this.player.x = this.displayWidth * 0.15;
     this.player.y = this.groundY - this.player.height;

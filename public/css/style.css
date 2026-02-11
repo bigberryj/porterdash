@@ -249,13 +249,19 @@ body {
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 
+#hud-left {
+  display: flex;
+  align-items: center;
+  margin-right: 12px;
+}
+
 #hud-right {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-#pause-btn, #sound-btn {
+#menu-btn, #pause-btn, #sound-btn {
   font-family: 'Orbitron', sans-serif;
   font-size: 1.2rem;
   background: rgba(255, 255, 255, 0.1);
@@ -269,12 +275,17 @@ body {
   transition: all 0.2s ease;
 }
 
-#pause-btn:hover, #sound-btn:hover {
+#menu-btn:hover, #pause-btn:hover, #sound-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   border-color: #0ff;
 }
 
-/* Death Overlay */
+/* Death Overlay - click-through so "click anywhere to retry" hits canvas */
+#death-overlay {
+  pointer-events: none;
+}
+
+/* Shared overlay content */
 #death-content, #complete-content, #pause-content {
   text-align: center;
   z-index: 11;
@@ -297,7 +308,14 @@ body {
   font-family: 'Orbitron', sans-serif;
   font-size: 1.2rem;
   color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 25px;
+  margin-bottom: 8px;
+}
+
+#death-hint {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
 }
 
 #complete-content h2 {
@@ -323,7 +341,6 @@ body {
 }
 
 #pause-buttons .menu-btn,
-#death-buttons .menu-btn,
 #complete-buttons .menu-btn {
   display: block;
   width: 100%;
