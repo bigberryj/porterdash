@@ -276,10 +276,6 @@ class GameEngine {
           });
           break;
         case 'portal':
-          this.obstacles.push({
-            type: 'portal', x: baseX,
-            y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
-          });
           break;
         case 'portal_fly': {
           const flightBeats = ob.flightBeats || 45;
@@ -628,8 +624,8 @@ class GameEngine {
 
       if (ox + ob.w < -100 || ox > this.displayWidth + 100) continue;
 
-      if (ob.type === 'portal' || ob.type === 'portal_fly' || ob.type === 'portal_fly_end') {
-        if ((ob.type === 'portal' || ob.type === 'portal_fly') && Math.abs(ox + ob.w / 2 - (p.x + p.width / 2)) < ob.w * 0.7) {
+      if (ob.type === 'portal_fly' || ob.type === 'portal_fly_end') {
+        if (ob.type === 'portal_fly' && Math.abs(ox + ob.w / 2 - (p.x + p.width / 2)) < ob.w * 0.7) {
           this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
         }
         continue;
@@ -985,7 +981,6 @@ class GameEngine {
         case 'spike': this.drawSpike(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'spike_up': this.drawSpikeUp(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'block': this.drawBlock(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
-        case 'portal': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
         case 'portal_fly': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
         case 'portal_fly_end': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, true); break;
         case 'portal_gravity': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;

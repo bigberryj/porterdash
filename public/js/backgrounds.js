@@ -264,7 +264,7 @@ class BackgroundSystem {
         layer,
         peaks,
         speed: 0.15 + layer * 0.1,
-        opacity: 0.12 - layer * 0.03,
+        opacity: 0.28 - layer * 0.06,
         baseY,
         offset: 0,
         totalWidth: w * 1.5,
@@ -734,7 +734,7 @@ class BackgroundSystem {
 
     // 3) Distant silhouettes (theme-based, very slow parallax)
     const parallax = scrollX * 0.015;
-    ctx.globalAlpha = 0.18;
+    ctx.globalAlpha = 0.4;
 
     if (theme === 'mountains' || theme === 'default' || !theme) {
       this.drawWallpaperSilhouetteMountains(ctx, w, h, horizonY, parallax, rainbowHue);
