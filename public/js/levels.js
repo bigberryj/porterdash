@@ -10,17 +10,19 @@
  *  - platforms: Array of platform definitions
  *
  * Obstacle types:
- *  - spike: Triangle spike on ground
- *  - spike_up: Inverted spike hanging from ceiling
- *  - block: Solid rectangular block
- *  - pillar: Tall narrow block
- *  - gap: Gap in the ground to fall through
- *  - portal: Ring portal (visual effect)
- *  - double_spike: Two spikes side by side
- *  - triple_spike: Three spikes in a row
- *  - spike_block: Spike on top of a block
- *  - moving_block: Block that moves up and down
- *  - chain: Hanging chain obstacle
+ *  - spike, double_spike, triple_spike: Spikes on ground
+ *  - spike_up: Inverted spike from ceiling
+ *  - block, pillar, spike_block: Solid blocks
+ *  - portal: Ring portal (visual)
+ *  - portal_fly: Enter flight mode (hold jump to rise, release to fall). Use flightBeats: N for segment length.
+ *  - flame_pit: Fire shooting up from pit (optional w: width in blocks)
+ *  - flamethrower: Fire from ceiling (optional w: width in blocks)
+ *
+ * Optional ground array for variable terrain (beats). If omitted, ground is flat.
+ *  - { type: 'flat', x: 0, len: 20 }
+ *  - { type: 'hill_up', x: 20, len: 10, rise: 1 }   // rise in blocks
+ *  - { type: 'hill_down', x: 30, len: 8, drop: 1 }
+ *  - { type: 'gap', x: 38, len: 5 }   // pit to jump over
  *
  * Position x is in "beats" - distance units from level start.
  * One beat = roughly the width of one block.
@@ -54,6 +56,15 @@ LEVELS.push({
   },
   bgTheme: 'mountains',
   bgCreatures: ['bat', 'fireball'],
+  ground: [
+    { type: 'flat', x: 0, len: 22 },
+    { type: 'hill_up', x: 22, len: 10, rise: 1 },
+    { type: 'flat', x: 32, len: 18 },
+    { type: 'gap', x: 50, len: 5 },
+    { type: 'flat', x: 55, len: 18 },
+    { type: 'hill_down', x: 73, len: 8, drop: 1 },
+    { type: 'flat', x: 81, len: 50 },
+  ],
   obstacles: [
     { type: 'spike', x: 12 },
     { type: 'spike', x: 18 },
@@ -62,7 +73,7 @@ LEVELS.push({
     { type: 'spike', x: 31 },
     { type: 'block', x: 37, w: 3, h: 1 },
     { type: 'spike', x: 41 },
-    { type: 'portal', x: 45 },
+    { type: 'portal_fly', x: 45, flightBeats: 38 },
     { type: 'spike', x: 50 },
     { type: 'spike', x: 51 },
     { type: 'spike', x: 52 },
@@ -110,6 +121,13 @@ LEVELS.push({
   },
   bgTheme: 'mountains',
   bgCreatures: ['ghost', 'wisp'],
+  ground: [
+    { type: 'flat', x: 0, len: 15 },
+    { type: 'hill_down', x: 15, len: 6, drop: 1 },
+    { type: 'flat', x: 21, len: 20 },
+    { type: 'hill_up', x: 41, len: 8, rise: 1 },
+    { type: 'flat', x: 49, len: 80 },
+  ],
   obstacles: [
     { type: 'spike', x: 10 },
     { type: 'spike', x: 11 },
@@ -178,6 +196,7 @@ LEVELS.push({
     { type: 'block', x: 18, w: 2, h: 2 },
     { type: 'spike', x: 21 },
     { type: 'triple_spike', x: 25 },
+    { type: 'flame_pit', x: 28, w: 2 },
     { type: 'portal', x: 30 },
     { type: 'pillar', x: 34 },
     { type: 'spike', x: 37 },
@@ -187,7 +206,7 @@ LEVELS.push({
     { type: 'spike', x: 50 },
     { type: 'spike', x: 51 },
     { type: 'block', x: 55, w: 1, h: 3 },
-    { type: 'spike', x: 58 },
+    { type: 'flamethrower', x: 58, w: 1 },
     { type: 'triple_spike', x: 62 },
     { type: 'portal', x: 67 },
     { type: 'block', x: 71, w: 2, h: 2 },

@@ -38,6 +38,8 @@ class GameEngine {
       dead: false,
       trail: [],
       hasDoubleJumped: false,
+      flightMode: false,
+      flightEndScrollX: 0,
     };
 
     // Effects
@@ -90,9 +92,55 @@ class GameEngine {
     this.player.dead = false;
     this.player.trail = [];
     this.player.hasDoubleJumped = false;
+    this.player.flightMode = false;
+    this.player.flightEndScrollX = 0;
+    this.triggeredFlightPortals = new Set();
 
     this.buildObstacles();
+    this.buildGroundSegments();
     this.bg.init(this.level.colors, this.level.bgCreatures, this.level.bgTheme);
+  }
+
+  buildGroundSegments() {
+    const bs = this.BLOCK_SIZE;
+    const totalPx = (this.level.totalBeats + this.leadBeats) * bs;
+    this.groundSegments = [];
+    const baseY = this.groundY;
+
+    const def = this.level.ground;
+    if (!def || !def.length) {
+      this.groundSegments.push({ x: 0, endX: totalPx, type: 'flat', y0: baseY, y1: baseY });
+      return;
+    }
+
+    for (const seg of def) {
+      const startX = seg.x * bs;
+      const lenPx = (seg.len || 1) * bs;
+      const endX = startX + lenPx;
+      if (seg.type === 'gap') {
+        this.groundSegments.push({ x: startX, endX, type: 'gap', y0: baseY, y1: baseY });
+      } else if (seg.type === 'hill_up') {
+        const rise = (seg.rise || 1) * bs;
+        this.groundSegments.push({ x: startX, endX, type: 'hill_up', y0: baseY, y1: baseY - rise });
+      } else if (seg.type === 'hill_down') {
+        const drop = (seg.drop || 1) * bs;
+        this.groundSegments.push({ x: startX, endX, type: 'hill_down', y0: baseY - drop, y1: baseY });
+      } else {
+        this.groundSegments.push({ x: startX, endX, type: 'flat', y0: baseY, y1: baseY });
+      }
+    }
+  }
+
+  getGroundY(worldX) {
+    if (!this.groundSegments || !this.groundSegments.length) return this.groundY;
+    for (const seg of this.groundSegments) {
+      if (worldX >= seg.x && worldX < seg.endX) {
+        if (seg.type === 'gap') return null;
+        const t = (worldX - seg.x) / (seg.endX - seg.x);
+        return seg.y0 + (seg.y1 - seg.y0) * t;
+      }
+    }
+    return this.groundY;
   }
 
   buildObstacles() {
@@ -161,6 +209,25 @@ class GameEngine {
             y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
           });
           break;
+        case 'portal_fly':
+          this.obstacles.push({
+            type: 'portal_fly', x: baseX,
+            y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
+            flightBeats: ob.flightBeats || 45,
+          });
+          break;
+        case 'flame_pit':
+          this.obstacles.push({
+            type: 'flame_pit', x: baseX,
+            y: this.groundY - 50, w: (ob.w || 2) * bs, h: 55, deadly: true,
+          });
+          break;
+        case 'flamethrower':
+          this.obstacles.push({
+            type: 'flamethrower', x: baseX,
+            y: -10, w: (ob.w || 1) * bs, h: 75, deadly: true,
+          });
+          break;
         case 'spike_up':
           this.obstacles.push({
             type: 'spike_up', x: baseX,
@@ -197,52 +264,88 @@ class GameEngine {
     }
 
     const p = this.player;
+    const bs = this.BLOCK_SIZE;
+    const worldX = this.scrollX + p.x + p.width / 2;
 
-    // Jump / Double Jump
-    if (this.jumpPressed) {
-      if (p.onGround) {
-        // Normal jump
-        p.vy = this.JUMP_FORCE;
-        p.onGround = false;
-        p.hasDoubleJumped = false;
-        this.spawnGroundParticles(p.x + p.width / 2, p.y + p.height, 5);
-        sound.playJump();
-      } else if (!p.hasDoubleJumped) {
-        // Double jump (available once per air time)
-        p.vy = this.DOUBLE_JUMP_FORCE;
-        p.hasDoubleJumped = true;
-        this.doubleJumpFlash = 8;
-        this.spawnDoubleJumpParticles(p.x + p.width / 2, p.y + p.height / 2);
-        sound.playDoubleJump();
+    // Portal flight trigger: only when first passing through
+    for (const ob of this.obstacles) {
+      if (ob.type === 'portal_fly' && ob.flightBeats != null && !this.triggeredFlightPortals.has(ob.x)) {
+        const ox = ob.x - this.scrollX;
+        const cx = ox + ob.w / 2;
+        if (cx >= p.x + p.width / 2 - 15 && cx <= p.x + p.width / 2 + 15 &&
+            p.y + p.height / 2 >= ob.y && p.y + p.height / 2 <= ob.y + ob.h) {
+          this.triggeredFlightPortals.add(ob.x);
+          p.flightMode = true;
+          p.flightEndScrollX = this.scrollX + ob.flightBeats * bs;
+          this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+        }
       }
     }
-    this.jumpPressed = false;
 
-    // Gravity
-    p.vy += this.GRAVITY;
-    p.y += p.vy;
-
-    // Reset onGround each frame
-    const wasOnGround = p.onGround;
-    p.onGround = false;
-
-    // Ground collision
-    if (p.y + p.height >= this.groundY) {
-      p.y = this.groundY - p.height;
+    // End flight when we reach the end of the flight segment
+    if (p.flightMode && this.scrollX >= p.flightEndScrollX) {
+      p.flightMode = false;
       p.vy = 0;
-      if (!wasOnGround) {
-        this.spawnGroundParticles(p.x + p.width / 2, this.groundY, 3);
-        sound.playLand();
-      }
-      p.onGround = true;
-      p.hasDoubleJumped = false;
     }
 
-    // Rotation (spins in air, ~90deg per jump)
-    if (!p.onGround) {
-      p.rotation += 0.12;
+    // --- Flight mode physics (Geometry Dash style: hold to rise, release to fall) ---
+    if (p.flightMode) {
+      const FLIGHT_UP = -7;
+      const FLIGHT_DOWN = 5;
+      if (this.jumpHeld) {
+        p.vy = FLIGHT_UP;
+      } else {
+        p.vy = FLIGHT_DOWN;
+      }
+      p.y += p.vy;
+      p.rotation = p.vy < 0 ? -0.3 : 0.3;
+      p.onGround = false;
     } else {
-      p.rotation = Math.round(p.rotation / (Math.PI / 2)) * (Math.PI / 2);
+      // --- Normal / jump ---
+      if (this.jumpPressed) {
+        if (p.onGround) {
+          p.vy = this.JUMP_FORCE;
+          p.onGround = false;
+          p.hasDoubleJumped = false;
+          this.spawnGroundParticles(p.x + p.width / 2, p.y + p.height, 5);
+          sound.playJump();
+        } else if (!p.hasDoubleJumped) {
+          p.vy = this.DOUBLE_JUMP_FORCE;
+          p.hasDoubleJumped = true;
+          this.doubleJumpFlash = 8;
+          this.spawnDoubleJumpParticles(p.x + p.width / 2, p.y + p.height / 2);
+          sound.playDoubleJump();
+        }
+      }
+      this.jumpPressed = false;
+
+      p.vy += this.GRAVITY;
+      p.y += p.vy;
+
+      const wasOnGround = p.onGround;
+      p.onGround = false;
+
+      const groundYAt = this.getGroundY(worldX);
+      if (groundYAt == null) {
+        if (p.y > this.displayHeight + 80) this.die();
+      } else {
+        if (p.y + p.height >= groundYAt - 4) {
+          p.y = groundYAt - p.height;
+          p.vy = 0;
+          if (!wasOnGround) {
+            this.spawnGroundParticles(p.x + p.width / 2, groundYAt, 3);
+            sound.playLand();
+          }
+          p.onGround = true;
+          p.hasDoubleJumped = false;
+        }
+      }
+
+      if (!p.onGround) {
+        p.rotation += 0.12;
+      } else {
+        p.rotation = Math.round(p.rotation / (Math.PI / 2)) * (Math.PI / 2);
+      }
     }
 
     // Trail
@@ -277,9 +380,17 @@ class GameEngine {
 
       if (ox + ob.w < -100 || ox > this.displayWidth + 100) continue;
 
-      if (ob.type === 'portal') {
-        if (Math.abs(ox + ob.w / 2 - (p.x + p.width / 2)) < ob.w * 0.7) {
+      if (ob.type === 'portal' || ob.type === 'portal_fly') {
+        if (ob.type === 'portal' && Math.abs(ox + ob.w / 2 - (p.x + p.width / 2)) < ob.w * 0.7) {
           this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+        }
+        continue;
+      }
+
+      if (ob.type === 'flame_pit' || ob.type === 'flamethrower') {
+        if (px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
+          this.die();
+          return;
         }
         continue;
       }
@@ -441,13 +552,38 @@ class GameEngine {
     const w = this.displayWidth;
     const h = this.displayHeight;
     const colors = this.level ? this.level.colors : { ground: '#ff1a1a', groundAccent: '#cc0000' };
+    const scrollX = this.scrollX;
 
     if (rainbowHue !== undefined) {
       ctx.fillStyle = `hsl(${rainbowHue}, 80%, 45%)`;
     } else {
       ctx.fillStyle = colors.ground;
     }
-    ctx.fillRect(0, this.groundY, w, h - this.groundY);
+
+    if (!this.groundSegments || !this.groundSegments.length) {
+      ctx.fillRect(0, this.groundY, w, h - this.groundY);
+    } else {
+      for (const seg of this.groundSegments) {
+        if (seg.endX <= scrollX || seg.x >= scrollX + w) continue;
+        const x1 = Math.max(0, seg.x - scrollX);
+        const x2 = Math.min(w, seg.endX - scrollX);
+        if (seg.type === 'gap') {
+          ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 50%, 8%)` : '#0a0a0a';
+          ctx.fillRect(x1, this.groundY, x2 - x1, h - this.groundY);
+          ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
+          continue;
+        }
+        const y1 = seg.y0;
+        const y2 = seg.y1;
+        ctx.beginPath();
+        ctx.moveTo(x1, h);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x2, h);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
 
     const glowColor = rainbowHue !== undefined
       ? `hsl(${rainbowHue}, 100%, 60%)` : colors.accent1;
@@ -456,17 +592,30 @@ class GameEngine {
     ctx.strokeStyle = glowColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, this.groundY);
-    ctx.lineTo(w, this.groundY);
+    let first = true;
+    for (const seg of this.groundSegments || []) {
+      if (seg.type === 'gap') continue;
+      const x1 = Math.max(0, seg.x - scrollX);
+      const x2 = Math.min(w, seg.endX - scrollX);
+      if (x2 <= x1) continue;
+      const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / (seg.endX - seg.x);
+      const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / (seg.endX - seg.x);
+      if (first) { ctx.moveTo(x1, y1); first = false; }
+      ctx.lineTo(x2, y2);
+    }
+    if (!this.groundSegments || this.groundSegments.length === 0) {
+      ctx.moveTo(0, this.groundY);
+      ctx.lineTo(w, this.groundY);
+    }
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Ground grid
+    ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
     ctx.strokeStyle = rainbowHue !== undefined
       ? `hsla(${rainbowHue}, 60%, 30%, 0.3)` : colors.groundAccent + '44';
     ctx.lineWidth = 1;
     const bs = this.BLOCK_SIZE;
-    const offset = this.scrollX % bs;
+    const offset = scrollX % bs;
     for (let x = -offset; x < w; x += bs) {
       ctx.beginPath(); ctx.moveTo(x, this.groundY); ctx.lineTo(x, h); ctx.stroke();
     }
@@ -474,18 +623,39 @@ class GameEngine {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
 
-    // Spike decorations
     const spikeH = 12, spikeW = 16;
-    const sOff = this.scrollX % (spikeW * 2);
-    ctx.fillStyle = rainbowHue !== undefined
-      ? `hsl(${rainbowHue}, 70%, 25%)` : colors.groundAccent;
-    for (let x = -sOff - spikeW; x < w + spikeW; x += spikeW * 2) {
-      ctx.beginPath();
-      ctx.moveTo(x, this.groundY);
-      ctx.lineTo(x + spikeW, this.groundY - spikeH);
-      ctx.lineTo(x + spikeW * 2, this.groundY);
-      ctx.closePath();
-      ctx.fill();
+    const sOff = scrollX % (spikeW * 2);
+    ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 70%, 25%)` : colors.groundAccent;
+    for (const seg of this.groundSegments || []) {
+      if (seg.type === 'gap' || seg.endX <= seg.x) continue;
+      const start = Math.max(seg.x, scrollX);
+      const end = Math.min(seg.endX, scrollX + w);
+      for (let gx = start - (start % (spikeW * 2)); gx < end; gx += spikeW * 2) {
+        const sx = gx - scrollX;
+        if (sx + spikeW * 2 < 0) continue;
+        const segLen = seg.endX - seg.x;
+        const t0 = (gx - seg.x) / segLen;
+        const t1 = (gx + spikeW * 2 - seg.x) / segLen;
+        const y0 = seg.y0 + (seg.y1 - seg.y0) * t0;
+        const y1 = seg.y0 + (seg.y1 - seg.y0) * t1;
+        const yMid = (y0 + y1) / 2;
+        ctx.beginPath();
+        ctx.moveTo(sx, yMid);
+        ctx.lineTo(sx + spikeW, yMid - spikeH);
+        ctx.lineTo(sx + spikeW * 2, yMid);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    if (!this.groundSegments || this.groundSegments.length === 0) {
+      for (let x = -sOff - spikeW; x < w + spikeW; x += spikeW * 2) {
+        ctx.beginPath();
+        ctx.moveTo(x, this.groundY);
+        ctx.lineTo(x + spikeW, this.groundY - spikeH);
+        ctx.lineTo(x + spikeW * 2, this.groundY);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
 
@@ -502,8 +672,71 @@ class GameEngine {
         case 'spike_up': this.drawSpikeUp(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'block': this.drawBlock(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'portal': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'portal_fly': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'flame_pit': this.drawFlamePit(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'flamethrower': this.drawFlamethrower(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
       }
     }
+  }
+
+  drawFlamePit(ctx, x, y, w, h, colors, rainbowHue) {
+    const t = this.time * 0.15;
+    const flicker = 0.9 + Math.sin(t * 3) * 0.1;
+    const baseY = y + h;
+    const flameColor = rainbowHue !== undefined
+      ? `hsla(${rainbowHue + 20}, 100%, 55%, 0.85)` : colors.accent2 || '#ff6600';
+    const coreColor = rainbowHue !== undefined
+      ? `hsla(${rainbowHue}, 100%, 75%, 0.95)` : '#ffaa44';
+
+    ctx.save();
+    const count = Math.max(4, Math.floor(w / 18));
+    for (let i = 0; i < count; i++) {
+      const ox = x + (w / (count + 1)) * (i + 1) + (Math.sin(t + i) * 3);
+      const fh = (40 + Math.sin(t * 2 + i * 1.5) * 8) * flicker;
+      const grad = ctx.createLinearGradient(ox, baseY, ox, baseY - fh);
+      grad.addColorStop(0, 'rgba(80, 20, 0, 0.9)');
+      grad.addColorStop(0.4, flameColor);
+      grad.addColorStop(0.8, coreColor);
+      grad.addColorStop(1, 'rgba(255, 255, 200, 0.9)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(ox - 6, baseY);
+      ctx.lineTo(ox - 4, baseY - fh * 0.5);
+      ctx.lineTo(ox, baseY - fh);
+      ctx.lineTo(ox + 4, baseY - fh * 0.5);
+      ctx.lineTo(ox + 6, baseY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  drawFlamethrower(ctx, x, y, w, h, colors, rainbowHue) {
+    const t = this.time * 0.15;
+    const flicker = 0.9 + Math.sin(t * 3) * 0.1;
+    const flameColor = rainbowHue !== undefined
+      ? `hsla(${rainbowHue + 20}, 100%, 55%, 0.85)` : colors.accent2 || '#ff6600';
+    const coreColor = rainbowHue !== undefined
+      ? `hsla(${rainbowHue}, 100%, 75%, 0.95)` : '#ffaa44';
+
+    const cx = x + w / 2;
+    const fh = (h * 0.85 + Math.sin(t * 2) * 6) * flicker;
+    const grad = ctx.createLinearGradient(cx, y, cx, y + fh);
+    grad.addColorStop(0, 'rgba(60, 15, 0, 0.95)');
+    grad.addColorStop(0.3, flameColor);
+    grad.addColorStop(0.7, coreColor);
+    grad.addColorStop(1, 'rgba(255, 255, 200, 0.9)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.4, y + fh);
+    ctx.lineTo(cx - w * 0.2, y + fh * 0.4);
+    ctx.lineTo(cx, y);
+    ctx.lineTo(cx + w * 0.2, y + fh * 0.4);
+    ctx.lineTo(cx + w * 0.4, y + fh);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue + 30}, 40%, 15%)` : '#222';
+    ctx.fillRect(x, y + fh, w, 12);
   }
 
   drawSpike(ctx, x, y, w, h, colors, rainbowHue) {

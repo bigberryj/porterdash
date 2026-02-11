@@ -105,9 +105,10 @@ class BackgroundSystem {
       });
     }
 
-    // Create background creatures
+    // Create background creatures (fewer, much bigger for strong silhouette)
     if (creatureTypes) {
-      for (let i = 0; i < 8; i++) {
+      const count = 4 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < count; i++) {
         const type = creatureTypes[Math.floor(Math.random() * creatureTypes.length)];
         this.creatures.push(this.createCreature(type, w, h));
       }
@@ -291,16 +292,16 @@ class BackgroundSystem {
   createCreature(type, w, h) {
     return {
       type,
-      x: w + Math.random() * w,
-      y: 40 + Math.random() * (h * 0.55),
-      size: 12 + Math.random() * 20,
-      speed: 1 + Math.random() * 2.5,
+      x: w + Math.random() * w * 1.2,
+      y: h * 0.15 + Math.random() * (h * 0.5),
+      size: 52 + Math.random() * 68,
+      speed: 0.8 + Math.random() * 1.5,
       wobble: Math.random() * Math.PI * 2,
-      wobbleSpeed: 0.02 + Math.random() * 0.04,
-      wobbleAmp: 5 + Math.random() * 15,
-      opacity: 0.15 + Math.random() * 0.35,
+      wobbleSpeed: 0.015 + Math.random() * 0.025,
+      wobbleAmp: 8 + Math.random() * 20,
+      opacity: 0.2 + Math.random() * 0.35,
       rotation: 0,
-      rotSpeed: (Math.random() - 0.5) * 0.03,
+      rotSpeed: (Math.random() - 0.5) * 0.02,
       frame: 0,
     };
   }
@@ -362,9 +363,9 @@ class BackgroundSystem {
       c.wobble += c.wobbleSpeed;
       c.rotation += c.rotSpeed;
       c.frame++;
-      if (c.x < -60) {
-        c.x = w + 100 + Math.random() * 300;
-        c.y = 40 + Math.random() * (h * 0.55);
+      if (c.x < -140) {
+        c.x = w + 150 + Math.random() * 350;
+        c.y = h * 0.15 + Math.random() * (h * 0.5);
       }
     }
 
