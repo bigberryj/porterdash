@@ -13,6 +13,7 @@
   let demoScroll = 0;
   let demoHue = 0;
   let lastFrameTime = performance.now();
+  let demoInitialized = false;
 
   // ---- Sound init on first interaction ----
   function initSound() {
@@ -217,9 +218,103 @@
   function returnToMenu() {
     currentScreen = 'menu';
     engine.state = 'idle';
-    engine.loadLevel(0);
+    demoInitialized = false;
     menu.showMenu();
     sound.stopMusic();
+  }
+
+  // ---- Demo AI ----
+
+  function demoAI(eng) {
+    const p = eng.player;
+    const bs = eng.BLOCK_SIZE;
+    const scrollX = eng.scrollX;
+    const playerWorldX = scrollX + p.x + p.width / 2;
+
+    // In flight mode: steer toward exit portal
+    if (p.flightMode) {
+      let targetY = eng.displayHeight * 0.35; // default: fly mid-high
+      // Look for exit portal
+      for (const ob of eng.obstacles) {
+        if (ob.type === 'portal_fly_end') {
+          const dist = ob.x - playerWorldX;
+          if (dist > -bs && dist < bs * 20) {
+            // Steer toward the exit portal's center Y
+            targetY = ob.y + ob.h / 2;
+            break;
+          }
+        }
+      }
+      if (p.y + p.height / 2 > targetY + 5) {
+        eng.jumpHeld = true; // fly up
+      } else {
+        eng.jumpHeld = false; // descend
+      }
+      return;
+    }
+
+    // Normal mode: look ahead for obstacles and decide when to jump
+    const lookAhead = bs * 6; // how far ahead to scan
+    let shouldJump = false;
+
+    for (const ob of eng.obstacles) {
+      const obScreenX = ob.x - scrollX;
+      const dist = obScreenX - p.x;
+
+      // Only care about obstacles ahead and close
+      if (dist < -bs || dist > lookAhead) continue;
+
+      // Jump for deadly obstacles (spikes, flame pits)
+      if (ob.deadly && dist > -bs * 0.5 && dist < bs * 3.5) {
+        shouldJump = true;
+        break;
+      }
+
+      // Jump for blocks (non-deadly) that are in the way
+      if (ob.type === 'block' && !ob.isPlatform && dist > 0 && dist < bs * 3) {
+        if (ob.y < p.y + p.height) {
+          shouldJump = true;
+          break;
+        }
+      }
+    }
+
+    // Also jump over gaps in the ground
+    const aheadWorldX = playerWorldX + bs * 2;
+    const groundAhead = eng.getGroundY(aheadWorldX);
+    if (groundAhead == null && p.onGround) {
+      shouldJump = true;
+    }
+
+    // Check for hill peaks - don't jump unnecessarily on hills
+    // Just let the player ride the terrain naturally
+
+    if (shouldJump && p.onGround) {
+      eng.jumpPressed = true;
+      eng.jumpHeld = true;
+    } else if (shouldJump && !p.onGround && !p.hasDoubleJumped) {
+      // Double jump if still in danger
+      let stillInDanger = false;
+      for (const ob of eng.obstacles) {
+        if (!ob.deadly) continue;
+        const obScreenX = ob.x - scrollX;
+        const dist = obScreenX - p.x;
+        if (dist > -bs && dist < bs * 2 && p.y + p.height > ob.y) {
+          stillInDanger = true;
+          break;
+        }
+      }
+      if (stillInDanger) {
+        eng.jumpPressed = true;
+        eng.jumpHeld = true;
+      } else {
+        eng.jumpPressed = false;
+        eng.jumpHeld = false;
+      }
+    } else {
+      eng.jumpPressed = false;
+      eng.jumpHeld = false;
+    }
   }
 
   // ---- Main Loop ----
@@ -231,12 +326,28 @@
     lastFrameTime = t;
 
     if (currentScreen === 'menu' || currentScreen === 'levels') {
-      if (!engine.level) engine.loadLevel(0);
-      demoScroll += 3;
-      engine.scrollX = demoScroll;
-      engine.time++;
-      if (engine.bg && engine.bg.update) engine.bg.update(engine.speed || 6, engine.scrollX);
-      engine.updateEffects();
+      // Animated demo: AI-controlled player running through the level
+      if (!demoInitialized || !engine.level) {
+        engine.loadLevel(0);
+        engine.state = 'playing';
+        demoInitialized = true;
+      }
+      // Reset demo if player died, completed, or scrolled past level
+      if (engine.state === 'dead' || engine.state === 'complete' || engine.state === 'boarding' ||
+          engine.state === 'takeoff' || engine.getProgress() >= 0.95) {
+        engine.loadLevel(0);
+        engine.state = 'playing';
+      }
+
+      // AI input: look ahead and decide actions
+      demoAI(engine);
+
+      engine.update();
+      // If the AI caused death, just reset immediately
+      if (engine.state === 'dead' || engine.state === 'dying') {
+        engine.loadLevel(0);
+        engine.state = 'playing';
+      }
       engine.draw();
     } else if (currentScreen === 'playing') {
       engine.update();

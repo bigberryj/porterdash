@@ -134,6 +134,8 @@ class GameEngine {
     this.shipBaseY = 0;
     this.shipX = 0;
     this.player.boardingScale = 1;
+    this.jumpPressed = false;
+    this.jumpHeld = false;
 
     this.buildObstacles();
     this.buildGroundSegments();
@@ -322,9 +324,12 @@ class GameEngine {
             y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
             flightBeats,
           });
+          // Exit portal positioned high in the air - player must fly through it
+          const exitPortalH = bs * 3;
+          const exitPortalY = bs * 2; // near the top of the screen
           this.obstacles.push({
             type: 'portal_fly_end', x: baseX + flightBeats * bs,
-            y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
+            y: exitPortalY, w: bs * 2, h: exitPortalH, deadly: false,
           });
           break;
         }
@@ -558,7 +563,8 @@ class GameEngine {
       }
     }
 
-    // End flight when passing through exit portal (or backup: past end scroll)
+    // End flight when passing through exit portal - teleport to ground
+    let exitedThroughPortal = false;
     for (const ob of this.obstacles) {
       if (ob.type === 'portal_fly_end' && p.flightMode) {
         const ox = ob.x - this.scrollX;
@@ -566,22 +572,34 @@ class GameEngine {
         const overlapX = p.x + p.width + margin > ox && p.x - margin < ox + ob.w;
         const overlapY = p.y + p.height > ob.y && p.y < ob.y + ob.h;
         if (overlapX && overlapY) {
+          exitedThroughPortal = true;
           p.flightMode = false;
           p.vy = 0;
+          // Teleport player to ground level
+          const groundYAt = this.getGroundY(this.scrollX + p.x + p.width / 2);
+          p.y = (groundYAt != null ? groundYAt : this.groundY) - p.height;
+          p.onGround = true;
+          p.hasDoubleJumped = false;
           this.justLandedFromFlight = true;
-          this.screenShake = Math.min(15, (this.screenShake || 0) + 6);
-          for (let i = 0; i < 12; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          this.screenShake = Math.min(15, (this.screenShake || 0) + 8);
+          for (let i = 0; i < 20; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          // Also spawn ground landing burst
+          this.spawnGroundParticles(p.x + p.width / 2, p.y + p.height, 8);
           const exitEffect = this.level.portalExitEffect || 'flash';
           this.portalTransitionEffect = { type: exitEffect, progress: 0, duration: 40, isEnter: false };
           break;
         }
       }
     }
+    // If flight ends without going through exit portal - player dies
     if (p.flightMode && this.scrollX >= p.flightEndScrollX) {
-      p.flightMode = false;
-      p.vy = 0;
-      this.justLandedFromFlight = true;
-      this.screenShake = Math.min(15, (this.screenShake || 0) + 6);
+      if (!exitedThroughPortal) {
+        // Missed the exit portal - die
+        this.state = 'dying';
+        this.deathSlowMoFrames = 6;
+        p.flightMode = false;
+        return;
+      }
     }
 
     // Portal gravity trigger
@@ -1298,7 +1316,21 @@ class GameEngine {
         case 'spike_up': this.drawSpikeUp(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'block': this.drawBlock(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'portal_fly': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
-        case 'portal_fly_end': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, true); break;
+        case 'portal_fly_end': {
+          this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, true);
+          // Draw teleport beam below exit portal
+          const beamCx = ox + ob.w / 2;
+          const beamTop = ob.y + ob.h;
+          const beamBottom = this.groundY;
+          const beamGrad = ctx.createLinearGradient(beamCx, beamTop, beamCx, beamBottom);
+          const beamAlpha = 0.12 + Math.sin(this.time * 0.08) * 0.06;
+          beamGrad.addColorStop(0, `rgba(0, 255, 136, ${beamAlpha})`);
+          beamGrad.addColorStop(0.5, `rgba(0, 200, 255, ${beamAlpha * 0.5})`);
+          beamGrad.addColorStop(1, 'rgba(0, 255, 136, 0)');
+          ctx.fillStyle = beamGrad;
+          ctx.fillRect(beamCx - ob.w * 0.3, beamTop, ob.w * 0.6, beamBottom - beamTop);
+          break;
+        }
         case 'portal_gravity': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
         case 'flame_pit': this.drawFlamePit(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'flamethrower': this.drawFlamethrower(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
@@ -1481,11 +1513,13 @@ class GameEngine {
     const cx = x + w / 2, cy = y + h / 2;
     const pulse = Math.sin(this.time * 0.05) * 0.15 + 0.85;
     const spin = this.time * 0.02;
-    const portalColor = rainbowHue !== undefined
-      ? `hsl(${rainbowHue + (isExit ? 60 : 120)}, 100%, ${isExit ? 70 : 60}%)` : (isExit ? colors.accent2 || colors.portal : colors.portal);
-    const innerColor = isExit ? '#0a2a0a' : '#0a0a1a';
-    const orange = colors.accent2 || '#ff8800';
-    const blue = colors.accent1 || '#4488ff';
+    // Exit portals: bright green/cyan to be clearly different from entrance (orange/blue)
+    const portalColor = isExit
+      ? (rainbowHue !== undefined ? `hsl(${rainbowHue + 160}, 100%, 65%)` : '#00ff88')
+      : (rainbowHue !== undefined ? `hsl(${rainbowHue + 120}, 100%, 60%)` : colors.portal);
+    const innerColor = isExit ? '#001a0a' : '#0a0a1a';
+    const orange = isExit ? '#00ffaa' : (colors.accent2 || '#ff8800');
+    const blue = isExit ? '#00ccff' : (colors.accent1 || '#4488ff');
 
     ctx.save();
 
