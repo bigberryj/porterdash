@@ -19,6 +19,10 @@ class BackgroundSystem {
     this.laserBeams = [];
     this.lightStreaks = [];
     this.segmentedLayers = [];
+    this.nebulaClouds = [];
+    this.driftingClouds = [];
+    this.distantPlanet = null;
+    this.flowLines = [];
     this.bottomWavePhase = 0;
     this.scrollX = 0;
     this.gridOffset = 0;
@@ -43,6 +47,10 @@ class BackgroundSystem {
     this.laserBeams = [];
     this.lightStreaks = [];
     this.segmentedLayers = [];
+    this.nebulaClouds = [];
+    this.driftingClouds = [];
+    this.distantPlanet = null;
+    this.flowLines = [];
     this.bottomWavePhase = 0;
     this.scrollX = 0;
     this.flashTimer = 0;
@@ -50,6 +58,13 @@ class BackgroundSystem {
 
     const w = this.canvas.width;
     const h = this.canvas.height;
+
+    // Nebula / glowing cloud layers (cosmic reference - multiple parallax blobs)
+    this.initNebulaClouds(w, h);
+    // Drifting soft clouds (horizon / alien sky)
+    this.initDriftingClouds(w, h);
+    // Flowing horizon lines (energy / lava / wireframe feel)
+    this.initFlowLines(w, h);
 
     // Vertical light streaks (digital rain / energy streams) - Geometry Dash style
     const streakCount = 50 + Math.floor(Math.random() * 30);
@@ -141,10 +156,77 @@ class BackgroundSystem {
       this.initFlashElements(w, h);
     }
 
-    // Space elements
+    // Space elements + distant planet/moon
     if (theme === 'space') {
       this.initSpaceElements(w, h);
+      this.initDistantPlanet(w, h);
     }
+  }
+
+  // ==================== NEBULA / GLOW CLOUDS ====================
+
+  initNebulaClouds(w, h) {
+    const layerSpeeds = [0.03, 0.07, 0.12];
+    const layerCounts = [4, 4, 3];
+    for (let layer = 0; layer < 3; layer++) {
+      for (let i = 0; i < layerCounts[layer]; i++) {
+        this.nebulaClouds.push({
+          x: Math.random() * w * 2.5 - w * 0.3,
+          y: h * (0.15 + Math.random() * 0.6),
+          radiusX: 80 + Math.random() * 180,
+          radiusY: 40 + Math.random() * 100,
+          speed: layerSpeeds[layer] * (0.7 + Math.random() * 0.6),
+          phase: Math.random() * Math.PI * 2,
+          pulseSpeed: 0.008 + Math.random() * 0.015,
+          layer,
+          colorIndex: Math.floor(Math.random() * 2),
+          opacity: 0.06 + layer * 0.02 + Math.random() * 0.04,
+        });
+      }
+    }
+  }
+
+  initDriftingClouds(w, h) {
+    for (let i = 0; i < 8; i++) {
+      this.driftingClouds.push({
+        x: Math.random() * w * 1.5,
+        y: h * (0.1 + Math.random() * 0.5),
+        w: 100 + Math.random() * 180,
+        h: 30 + Math.random() * 50,
+        speed: 0.15 + Math.random() * 0.25,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.01 + Math.random() * 0.02,
+        wobbleAmp: 8 + Math.random() * 15,
+        phase: Math.random() * Math.PI * 2,
+        opacity: 0.08 + Math.random() * 0.1,
+      });
+    }
+  }
+
+  initFlowLines(w, h) {
+    const lineCount = 12 + Math.floor(Math.random() * 8);
+    for (let i = 0; i < lineCount; i++) {
+      this.flowLines.push({
+        y: h * (0.4 + Math.random() * 0.45),
+        amplitude: 15 + Math.random() * 40,
+        frequency: 0.008 + Math.random() * 0.02,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.02 + Math.random() * 0.04,
+        width: 0.8 + Math.random() * 1.5,
+        opacity: 0.04 + Math.random() * 0.06,
+        layer: Math.floor(Math.random() * 2),
+      });
+    }
+  }
+
+  initDistantPlanet(w, h) {
+    this.distantPlanet = {
+      x: w * 0.7 + Math.random() * w * 0.5,
+      radius: 80 + Math.random() * 120,
+      y: h * 0.15 + Math.random() * 0.2 * h,
+      speed: 0.02,
+      phase: Math.random() * Math.PI * 2,
+    };
   }
 
   // ==================== MOUNTAIN SYSTEM ====================
@@ -355,6 +437,41 @@ class BackgroundSystem {
       if (sl.offset >= sl.segmentWidth) sl.offset -= sl.segmentWidth;
     }
 
+    // Update nebula clouds (parallax)
+    for (const n of this.nebulaClouds) {
+      n.x -= scrollSpeed * n.speed;
+      n.phase += n.pulseSpeed;
+      if (n.x + n.radiusX * 2 < 0) {
+        n.x = w + n.radiusX + Math.random() * w;
+        n.y = h * (0.15 + Math.random() * 0.6);
+      }
+    }
+
+    // Update drifting clouds
+    for (const c of this.driftingClouds) {
+      c.x -= scrollSpeed * c.speed;
+      c.wobble += c.wobbleSpeed;
+      c.phase += 0.01;
+      if (c.x + c.w < 0) {
+        c.x = w + 50 + Math.random() * w;
+        c.y = h * (0.1 + Math.random() * 0.5);
+      }
+    }
+
+    // Update flow lines (phase only; they're full-width)
+    for (const fl of this.flowLines) {
+      fl.phase += fl.speed + scrollSpeed * 0.002;
+    }
+
+    // Update distant planet (space theme)
+    if (this.distantPlanet) {
+      this.distantPlanet.x -= scrollSpeed * this.distantPlanet.speed;
+      this.distantPlanet.phase += 0.005;
+      if (this.distantPlanet.x + this.distantPlanet.radius < 0) {
+        this.distantPlanet.x = w + this.distantPlanet.radius + Math.random() * w * 0.5;
+      }
+    }
+
     this.bottomWavePhase += 0.02 + scrollSpeed * 0.002;
 
     // Update creatures
@@ -487,6 +604,12 @@ class BackgroundSystem {
       this.drawCaveCeiling(rainbowHue);
     }
 
+    // Distant planet/moon (space theme - very back layer)
+    if (this.distantPlanet) this.drawDistantPlanet(rainbowHue);
+
+    // Nebula / glowing cloud layers (cosmic - multiple parallax)
+    this.drawNebulaClouds(rainbowHue);
+
     // Vertical light streaks (digital rain / energy streams)
     this.drawLightStreaks(rainbowHue);
 
@@ -498,6 +621,9 @@ class BackgroundSystem {
 
     // Mountains (back layer - drawn first)
     this.drawMountains(rainbowHue);
+
+    // Drifting clouds (mid layer - soft movement)
+    this.drawDriftingClouds(rainbowHue);
 
     // Background shapes (parallax)
     this.drawBgShapes(rainbowHue);
@@ -522,6 +648,12 @@ class BackgroundSystem {
 
     // Creatures
     this.drawCreatures(rainbowHue);
+
+    // Flowing horizon lines (energy / lava feel - foreground movement)
+    this.drawFlowLines(rainbowHue);
+
+    // Flowing horizon lines (energy / lava feel - foreground movement)
+    this.drawFlowLines(rainbowHue);
 
     // Bottom zig-zag wave layer (parallax waves near bottom)
     this.drawBottomWaves(rainbowHue);
@@ -575,6 +707,157 @@ class BackgroundSystem {
       ctx.lineTo(w, y);
       ctx.stroke();
     }
+  }
+
+  // ==================== DISTANT PLANET (Space theme) ====================
+
+  drawDistantPlanet(rainbowHue) {
+    if (!this.distantPlanet) return;
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const p = this.distantPlanet;
+    const x = p.x;
+    const y = p.y;
+    const r = p.radius;
+    if (x + r < 0 || x - r > w) return;
+
+    const hue = rainbowHue !== undefined ? rainbowHue + 200 : 0;
+    const mainColor = rainbowHue !== undefined
+      ? `hsla(${hue}, 40%, 25%, 0.35)`
+      : this.colors.bgShapes ? this.hexToRgba(this.colors.bgShapes, 0.35) : 'rgba(40, 50, 80, 0.35)';
+    const rimColor = rainbowHue !== undefined
+      ? `hsla(${hue}, 60%, 45%, 0.2)`
+      : this.colors.accent1 ? this.hexToRgba(this.colors.accent1, 0.2) : 'rgba(120, 180, 220, 0.2)';
+
+    const pulse = 0.92 + Math.sin(p.phase) * 0.08;
+    const rr = r * pulse;
+
+    const grad = ctx.createRadialGradient(x - rr * 0.3, y - rr * 0.2, 0, x, y, rr * 1.2);
+    grad.addColorStop(0, rimColor);
+    grad.addColorStop(0.4, mainColor);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, rr * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    ctx.arc(x, y, rr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ==================== NEBULA CLOUDS (Glowing layers) ====================
+
+  drawNebulaClouds(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const c1 = this.colors.accent1 || '#88aaff';
+    const c2 = this.colors.accent2 || '#ff88aa';
+    const bg2 = this.colors.bg2 || '#1a1a2e';
+
+    for (const n of this.nebulaClouds) {
+      if (n.x + n.radiusX * 2 < 0 || n.x - n.radiusX > w) continue;
+
+      const pulse = 0.85 + Math.sin(n.phase) * 0.15;
+      const rx = n.radiusX * pulse;
+      const ry = n.radiusY * pulse;
+      const color = n.colorIndex === 0 ? c1 : c2;
+
+      const grad = ctx.createRadialGradient(
+        n.x - rx * 0.3, n.y - ry * 0.2, 0,
+        n.x, n.y, Math.max(rx, ry)
+      );
+      grad.addColorStop(0, this.hexToRgba(color, n.opacity));
+      grad.addColorStop(0.5, this.hexToRgba(color, n.opacity * 0.4));
+      grad.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(n.x, n.y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Internal "energy" line (cosmic reference - swirling contour)
+      ctx.strokeStyle = this.hexToRgba(color, n.opacity * 0.5);
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.4 + Math.sin(n.phase * 1.3) * 0.2;
+      ctx.beginPath();
+      for (let t = 0; t <= 1; t += 0.05) {
+        const a = t * Math.PI * 2 + n.phase * 0.5;
+        const ex = n.x + Math.cos(a) * rx * (0.6 + Math.sin(t * 4 + n.phase) * 0.2);
+        const ey = n.y + Math.sin(a) * ry * (0.5 + Math.cos(t * 3) * 0.2);
+        if (t === 0) ctx.moveTo(ex, ey);
+        else ctx.lineTo(ex, ey);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ==================== DRIFTING CLOUDS ====================
+
+  drawDriftingClouds(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    for (const c of this.driftingClouds) {
+      if (c.x + c.w < 0 || c.x > w) continue;
+
+      const yOff = Math.sin(c.wobble) * c.wobbleAmp;
+      const y = c.y + yOff;
+      const opacity = c.opacity * (0.8 + Math.sin(c.phase) * 0.2);
+
+      const color = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 30}, 50%, 70%, ${opacity})`
+        : this.colors.bgShapes ? this.hexToRgba(this.colors.bgShapes, opacity) : `rgba(80, 90, 120, ${opacity})`;
+
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 1;
+
+      const cx = c.x + c.w / 2;
+      const cy = y + c.h / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx - c.w * 0.15, cy, c.w * 0.35, c.h * 0.9, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy - c.h * 0.1, c.w * 0.4, c.h, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + c.w * 0.2, cy, c.w * 0.35, c.h * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ==================== FLOW LINES (Horizon energy / lava feel) ====================
+
+  drawFlowLines(rainbowHue) {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const scrollX = this.scrollX || 0;
+
+    for (const fl of this.flowLines) {
+      const color = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 60}, 80%, 60%, ${fl.opacity})`
+        : this.colors.accent1 ? this.hexToRgba(this.colors.accent1, fl.opacity) : `rgba(150, 200, 255, ${fl.opacity})`;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = fl.width;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.7 + Math.sin(fl.phase * 2) * 0.3;
+
+      ctx.beginPath();
+      const steps = 80;
+      for (let i = 0; i <= steps; i++) {
+        const x = (i / steps) * (w + 100) - 50;
+        const t = (x + scrollX) * fl.frequency + fl.phase;
+        const y = fl.y + Math.sin(t) * fl.amplitude + (fl.layer ? Math.sin(t * 0.7) * 10 : 0);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 
   // ==================== LIGHT STREAKS (Digital rain) ====================
