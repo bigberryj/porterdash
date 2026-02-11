@@ -1165,14 +1165,26 @@ class GameEngine {
 
   drawPortal(ctx, x, y, w, h, colors, rainbowHue, isExit) {
     const cx = x + w / 2, cy = y + h / 2;
-    const rx = w * 0.8, ry = h * 0.4;
     const pulse = Math.sin(this.time * 0.05) * 0.15 + 0.85;
     const spin = this.time * 0.02;
     const portalColor = rainbowHue !== undefined
       ? `hsl(${rainbowHue + (isExit ? 60 : 120)}, 100%, ${isExit ? 70 : 60}%)` : (isExit ? colors.accent2 || colors.portal : colors.portal);
     const innerColor = isExit ? '#0a2a0a' : '#0a0a1a';
+    const orange = colors.accent2 || '#ff8800';
+    const blue = colors.accent1 || '#4488ff';
 
     ctx.save();
+
+    // Side-angle tilt: portal upright but viewed from a slight angle (like reference screenshot)
+    const tiltDeg = -22;
+    const tiltRad = tiltDeg * Math.PI / 180;
+    ctx.translate(cx, cy);
+    ctx.rotate(tiltRad);
+    ctx.translate(-cx, -cy);
+
+    // Oval proportions for upright portal seen from side (taller than wide)
+    const rx = w * 0.42;
+    const ry = h * 0.48;
 
     for (let ring = 0; ring < 4; ring++) {
       const r = (ring / 4) * 0.95 + 0.05;
@@ -1191,8 +1203,8 @@ class GameEngine {
 
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx * 0.6);
     grad.addColorStop(0, innerColor);
-    grad.addColorStop(0.4, portalColor.replace(')', ', 0.25)').replace('hsl', 'hsla').replace('rgb', 'rgba'));
-    grad.addColorStop(0.8, portalColor.replace(')', ', 0.08)').replace('hsl', 'hsla').replace('rgb', 'rgba'));
+    grad.addColorStop(0.4, (portalColor.startsWith('#') ? hexToRgba(portalColor, 0.25) : portalColor.replace(')', ', 0.25)').replace('rgb', 'rgba')));
+    grad.addColorStop(0.8, (portalColor.startsWith('#') ? hexToRgba(portalColor, 0.08) : portalColor.replace(')', ', 0.08)').replace('rgb', 'rgba')));
     grad.addColorStop(1, 'transparent');
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -1206,6 +1218,44 @@ class GameEngine {
     ctx.beginPath();
     ctx.ellipse(cx, cy, rx * pulse, ry * pulse, 0, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Spiraling particle effect around the rim (fiery orange + electric blue)
+    const spiralCount = 24;
+    for (let i = 0; i < spiralCount; i++) {
+      const angle = (this.time * 0.08 + (i / spiralCount) * Math.PI * 2) % (Math.PI * 2);
+      const dist = 1.02 + Math.sin(this.time * 0.1 + i * 0.5) * 0.06;
+      const px = cx + Math.cos(angle) * rx * dist;
+      const py = cy + Math.sin(angle) * ry * dist;
+      const isOrange = (i + Math.floor(this.time * 0.1)) % 2 === 0;
+      ctx.fillStyle = isOrange ? hexToRgba(orange, 0.85) : hexToRgba(blue, 0.85);
+      ctx.shadowColor = isOrange ? orange : blue;
+      ctx.shadowBlur = 8;
+      const size = 2 + Math.sin(this.time * 0.12 + i) * 1.2;
+      ctx.beginPath();
+      ctx.ellipse(px, py, size, size * 0.6, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // Lightning tendrils radiating outward from rim
+    for (let i = 0; i < 6; i++) {
+      const baseAngle = (this.time * 0.05 + (i / 6) * Math.PI * 2) % (Math.PI * 2);
+      const x1 = cx + Math.cos(baseAngle) * rx;
+      const y1 = cy + Math.sin(baseAngle) * ry;
+      const len = 8 + Math.sin(this.time * 0.15 + i * 2) * 6;
+      const jitter = Math.sin(this.time * 0.25 + i * 1.3) * 2;
+      const x2 = x1 + Math.cos(baseAngle) * len + Math.cos(this.time * 0.2 + i) * jitter;
+      const y2 = y1 + Math.sin(baseAngle) * len + Math.sin(this.time * 0.17 + i * 1.1) * jitter;
+      ctx.strokeStyle = hexToRgba(blue, 0.6 + Math.sin(this.time * 0.2 + i) * 0.2);
+      ctx.lineWidth = 1.2;
+      ctx.shadowColor = blue;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
     ctx.shadowBlur = 0;
 
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
@@ -1247,8 +1297,8 @@ class GameEngine {
       const color = rainbowHue !== undefined
         ? `hsla(${rainbowHue + 100}, 90%, 65%, ${alpha})`
         : pt.isFlight
-          ? (colors.accent2 ? this.hexToRgba(colors.accent2, alpha) : `rgba(100,255,150,${alpha})`)
-          : (colors.accent1 ? this.hexToRgba(colors.accent1, alpha) : `rgba(80,220,120,${alpha})`);
+          ? (colors.accent2 ? hexToRgba(colors.accent2, alpha) : `rgba(100,255,150,${alpha})`)
+          : (colors.accent1 ? hexToRgba(colors.accent1, alpha) : `rgba(80,220,120,${alpha})`);
       ctx.fillStyle = color;
       ctx.globalAlpha = alpha;
       const s = pt.size * pt.life;
