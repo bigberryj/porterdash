@@ -26,7 +26,8 @@
  *  - { type: 'flat', x: 0, len: 20 }
  *  - { type: 'hill_up', x: 20, len: 10, rise: 1 }   // rise in blocks
  *  - { type: 'hill_down', x: 30, len: 8, drop: 1 }
- *  - { type: 'gap', x: 38, len: 5 }   // pit to jump over
+ *  - { type: 'curve', x: 38, len: 12, rise: 1 }   // round rolling hill (sine curve)
+ *  - { type: 'gap', x: 50, len: 5 }   // pit to jump over
  *
  * Position x is in "beats" - distance units from level start.
  * One beat = roughly the width of one block.
@@ -61,13 +62,15 @@ LEVELS.push({
   bgTheme: 'mountains',
   bgCreatures: ['bat', 'fireball'],
   ground: [
-    { type: 'flat', x: 0, len: 22 },
-    { type: 'hill_up', x: 22, len: 10, rise: 1 },
-    { type: 'flat', x: 32, len: 18 },
-    { type: 'gap', x: 50, len: 5 },
-    { type: 'flat', x: 55, len: 18 },
-    { type: 'hill_down', x: 73, len: 8, drop: 1 },
-    { type: 'flat', x: 81, len: 50 },
+    { type: 'flat', x: 0, len: 15 },
+    { type: 'curve', x: 15, len: 14, rise: 1 },
+    { type: 'flat', x: 29, len: 12 },
+    { type: 'gap', x: 41, len: 5 },
+    { type: 'flat', x: 46, len: 12 },
+    { type: 'curve', x: 58, len: 16, rise: 1 },
+    { type: 'flat', x: 74, len: 10 },
+    { type: 'curve', x: 84, len: 12, rise: 0.8 },
+    { type: 'flat', x: 96, len: 35 },
   ],
   obstacles: [
     { type: 'spike', x: 12 },
@@ -126,11 +129,11 @@ LEVELS.push({
   bgTheme: 'mountains',
   bgCreatures: ['ghost', 'wisp'],
   ground: [
-    { type: 'flat', x: 0, len: 15 },
-    { type: 'hill_down', x: 15, len: 6, drop: 1 },
-    { type: 'flat', x: 21, len: 20 },
-    { type: 'hill_up', x: 41, len: 8, rise: 1 },
-    { type: 'flat', x: 49, len: 80 },
+    { type: 'flat', x: 0, len: 12 },
+    { type: 'curve', x: 12, len: 12, rise: 1 },
+    { type: 'flat', x: 24, len: 18 },
+    { type: 'curve', x: 42, len: 10, rise: 0.8 },
+    { type: 'flat', x: 52, len: 78 },
   ],
   obstacles: [
     { type: 'spike', x: 10 },

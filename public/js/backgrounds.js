@@ -526,8 +526,11 @@ class BackgroundSystem {
     // Bottom zig-zag wave layer (parallax waves near bottom)
     this.drawBottomWaves(rainbowHue);
 
-    // Ambient glow pulse
-    const pulse = Math.sin(this.pulsePhase) * 0.5 + 0.5;
+    // Ambient glow pulse (synced to music beat when available)
+    let pulse = Math.sin(this.pulsePhase) * 0.5 + 0.5;
+    if (typeof sound !== 'undefined' && sound.isOnBeat && sound.isOnBeat(4)) {
+      pulse += 0.08;
+    }
     const glowColor = rainbowHue !== undefined
       ? `hsla(${rainbowHue}, 100%, 50%, ${0.03 + pulse * 0.04})`
       : colors.glow.replace(/[\d.]+\)$/, `${0.03 + pulse * 0.04})`);

@@ -133,6 +133,9 @@ class GameEngine {
       } else if (seg.type === 'hill_down') {
         const drop = (seg.drop || 1) * bs;
         this.groundSegments.push({ x: startX, endX, type: 'hill_down', y0: baseY - drop, y1: baseY });
+      } else if (seg.type === 'curve' || seg.type === 'roll') {
+        const rise = (seg.rise || 1) * bs;
+        this.groundSegments.push({ x: startX, endX, type: 'curve', y0: baseY, y1: baseY, rise });
       } else {
         this.groundSegments.push({ x: startX, endX, type: 'flat', y0: baseY, y1: baseY });
       }
@@ -145,6 +148,10 @@ class GameEngine {
       if (worldX >= seg.x && worldX < seg.endX) {
         if (seg.type === 'gap') return null;
         const t = (worldX - seg.x) / (seg.endX - seg.x);
+        if (seg.type === 'curve' && seg.rise != null) {
+          const rise = seg.rise;
+          return seg.y0 - rise * Math.sin(t * Math.PI);
+        }
         return seg.y0 + (seg.y1 - seg.y0) * t;
       }
     }
@@ -221,13 +228,19 @@ class GameEngine {
             y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
           });
           break;
-        case 'portal_fly':
+        case 'portal_fly': {
+          const flightBeats = ob.flightBeats || 45;
           this.obstacles.push({
             type: 'portal_fly', x: baseX,
             y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
-            flightBeats: ob.flightBeats || 45,
+            flightBeats,
+          });
+          this.obstacles.push({
+            type: 'portal_fly_end', x: baseX + flightBeats * bs,
+            y: this.groundY - bs * 3.5, w: bs * 2, h: bs * 3.5, deadly: false,
           });
           break;
+        }
         case 'flame_pit':
           this.obstacles.push({
             type: 'flame_pit', x: baseX,
@@ -353,12 +366,25 @@ class GameEngine {
           this.triggeredFlightPortals.add(ob.x);
           p.flightMode = true;
           p.flightEndScrollX = this.scrollX + ob.flightBeats * bs;
-          this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          for (let i = 0; i < 12; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
         }
       }
     }
 
-    // End flight when we reach the end of the flight segment
+    // End flight when passing through exit portal (or backup: past end scroll)
+    for (const ob of this.obstacles) {
+      if (ob.type === 'portal_fly_end' && p.flightMode) {
+        const ox = ob.x - this.scrollX;
+        const cx = ox + ob.w / 2;
+        if (cx >= p.x + p.width / 2 - 20 && cx <= p.x + p.width / 2 + 20 &&
+            p.y + p.height / 2 >= ob.y && p.y + p.height / 2 <= ob.y + ob.h) {
+          p.flightMode = false;
+          p.vy = 0;
+          this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
+          break;
+        }
+      }
+    }
     if (p.flightMode && this.scrollX >= p.flightEndScrollX) {
       p.flightMode = false;
       p.vy = 0;
@@ -396,6 +422,8 @@ class GameEngine {
         p.vy = FLIGHT_DOWN;
       }
       p.y += p.vy;
+      const minFlightY = this.groundY - p.height;
+      if (p.y > minFlightY) p.y = minFlightY;
       p.rotation = p.vy < 0 ? -0.3 : 0.3;
       p.onGround = false;
     } else if (p.gravityFlipped) {
@@ -506,8 +534,8 @@ class GameEngine {
 
       if (ox + ob.w < -100 || ox > this.displayWidth + 100) continue;
 
-      if (ob.type === 'portal' || ob.type === 'portal_fly') {
-        if (ob.type === 'portal' && Math.abs(ox + ob.w / 2 - (p.x + p.width / 2)) < ob.w * 0.7) {
+      if (ob.type === 'portal' || ob.type === 'portal_fly' || ob.type === 'portal_fly_end') {
+        if ((ob.type === 'portal' || ob.type === 'portal_fly') && Math.abs(ox + ob.w / 2 - (p.x + p.width / 2)) < ob.w * 0.7) {
           this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
         }
         continue;
@@ -638,7 +666,7 @@ class GameEngine {
   }
 
   spawnPortalEffect(x, y) {
-    if (Math.random() > 0.3) return;
+    if (Math.random() > 0.5) return;
     this.portalEffects.push({
       x, y: y + (Math.random() - 0.5) * 60,
       vx: (Math.random() - 0.5) * 2,
@@ -718,12 +746,24 @@ class GameEngine {
           ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
           continue;
         }
-        const y1 = seg.y0;
-        const y2 = seg.y1;
         ctx.beginPath();
         ctx.moveTo(x1, h);
-        ctx.lineTo(x1, y1);
-        ctx.lineTo(x2, y2);
+        if (seg.type === 'curve' && seg.rise != null) {
+          const segLen = seg.endX - seg.x;
+          const steps = Math.max(8, Math.floor((x2 - x1) / 4));
+          for (let i = 0; i <= steps; i++) {
+            const sx = x1 + (i / steps) * (x2 - x1);
+            const worldX = seg.x + (sx - x1);
+            const t = (worldX - seg.x) / segLen;
+            const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
+            ctx.lineTo(sx, sy);
+          }
+        } else {
+          const y1 = seg.y0;
+          const y2 = seg.y1;
+          ctx.lineTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
         ctx.lineTo(x2, h);
         ctx.closePath();
         ctx.fill();
@@ -736,36 +776,53 @@ class GameEngine {
     ctx.shadowBlur = 15;
     ctx.strokeStyle = glowColor;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    let first = true;
-    for (const seg of this.groundSegments || []) {
-      if (seg.type === 'gap') continue;
-      const x1 = Math.max(0, seg.x - scrollX);
-      const x2 = Math.min(w, seg.endX - scrollX);
-      if (x2 <= x1) continue;
-      const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / (seg.endX - seg.x);
-      const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / (seg.endX - seg.x);
-      if (first) { ctx.moveTo(x1, y1); first = false; }
-      ctx.lineTo(x2, y2);
-    }
-    if (!this.groundSegments || this.groundSegments.length === 0) {
+    const hasSegments = this.groundSegments && this.groundSegments.length > 0;
+    if (hasSegments) {
+      for (const seg of this.groundSegments) {
+        if (seg.type === 'gap' || seg.endX <= seg.x) continue;
+        const x1 = Math.max(0, seg.x - scrollX);
+        const x2 = Math.min(w, seg.endX - scrollX);
+        if (x2 <= x1) continue;
+        const segLen = seg.endX - seg.x;
+        ctx.beginPath();
+        if (seg.type === 'curve' && seg.rise != null) {
+          const steps = Math.max(8, Math.floor((x2 - x1) / 4));
+          for (let i = 0; i <= steps; i++) {
+            const sx = x1 + (i / steps) * (x2 - x1);
+            const worldX = seg.x + (sx - x1);
+            const t = (worldX - seg.x) / segLen;
+            const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
+            if (i === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
+          }
+        } else {
+          const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / segLen;
+          const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / segLen;
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();
       ctx.moveTo(0, this.groundY);
       ctx.lineTo(w, this.groundY);
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.shadowBlur = 0;
 
-    ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
     ctx.strokeStyle = rainbowHue !== undefined
       ? `hsla(${rainbowHue}, 60%, 30%, 0.3)` : colors.groundAccent + '44';
     ctx.lineWidth = 1;
     const bs = this.BLOCK_SIZE;
-    const offset = scrollX % bs;
-    for (let x = -offset; x < w; x += bs) {
-      ctx.beginPath(); ctx.moveTo(x, this.groundY); ctx.lineTo(x, h); ctx.stroke();
-    }
-    for (let y = this.groundY; y < h; y += bs) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    if (!hasSegments) {
+      const offset = scrollX % bs;
+      for (let x = -offset; x < w; x += bs) {
+        ctx.beginPath(); ctx.moveTo(x, this.groundY); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let y = this.groundY; y < h; y += bs) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
     }
 
     const spikeH = 12, spikeW = 16;
@@ -781,8 +838,14 @@ class GameEngine {
         const segLen = seg.endX - seg.x;
         const t0 = (gx - seg.x) / segLen;
         const t1 = (gx + spikeW * 2 - seg.x) / segLen;
-        const y0 = seg.y0 + (seg.y1 - seg.y0) * t0;
-        const y1 = seg.y0 + (seg.y1 - seg.y0) * t1;
+        let y0, y1;
+        if (seg.type === 'curve' && seg.rise != null) {
+          y0 = seg.y0 - seg.rise * Math.sin(t0 * Math.PI);
+          y1 = seg.y0 - seg.rise * Math.sin(t1 * Math.PI);
+        } else {
+          y0 = seg.y0 + (seg.y1 - seg.y0) * t0;
+          y1 = seg.y0 + (seg.y1 - seg.y0) * t1;
+        }
         const yMid = (y0 + y1) / 2;
         ctx.beginPath();
         ctx.moveTo(sx, yMid);
@@ -816,9 +879,10 @@ class GameEngine {
         case 'spike': this.drawSpike(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'spike_up': this.drawSpikeUp(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'block': this.drawBlock(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
-        case 'portal': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
-        case 'portal_fly': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
-        case 'portal_gravity': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'portal': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
+        case 'portal_fly': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
+        case 'portal_fly_end': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, true); break;
+        case 'portal_gravity': this.drawPortal(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, false); break;
         case 'flame_pit': this.drawFlamePit(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'flamethrower': this.drawFlamethrower(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'collectible': if (!this.collectedStars.has(ob.id)) this.drawCollectible(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
@@ -995,47 +1059,76 @@ class GameEngine {
     }
   }
 
-  drawPortal(ctx, x, y, w, h, colors, rainbowHue) {
+  drawPortal(ctx, x, y, w, h, colors, rainbowHue, isExit) {
     const cx = x + w / 2, cy = y + h / 2;
     const rx = w * 0.8, ry = h * 0.4;
     const pulse = Math.sin(this.time * 0.05) * 0.15 + 0.85;
+    const spin = this.time * 0.02;
     const portalColor = rainbowHue !== undefined
-      ? `hsl(${rainbowHue + 120}, 100%, 60%)` : colors.portal;
+      ? `hsl(${rainbowHue + (isExit ? 60 : 120)}, 100%, ${isExit ? 70 : 60}%)` : (isExit ? colors.accent2 || colors.portal : colors.portal);
+    const innerColor = isExit ? '#0a2a0a' : '#0a0a1a';
+
+    ctx.save();
+
+    for (let ring = 0; ring < 4; ring++) {
+      const r = (ring / 4) * 0.95 + 0.05;
+      const pr = r * pulse * (1 - ring * 0.08);
+      ctx.strokeStyle = portalColor;
+      ctx.globalAlpha = 0.4 + (1 - ring / 4) * 0.4;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = portalColor;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx * pr, ry * pr, spin + ring * 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx * 0.6);
+    grad.addColorStop(0, innerColor);
+    grad.addColorStop(0.4, portalColor.replace(')', ', 0.25)').replace('hsl', 'hsla').replace('rgb', 'rgba'));
+    grad.addColorStop(0.8, portalColor.replace(')', ', 0.08)').replace('hsl', 'hsla').replace('rgb', 'rgba'));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.95 * pulse, ry * 0.95 * pulse, 0, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.strokeStyle = portalColor;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.shadowColor = portalColor;
-    ctx.shadowBlur = 20;
+    ctx.shadowBlur = 18;
     ctx.beginPath();
     ctx.ellipse(cx, cy, rx * pulse, ry * pulse, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, rx * 0.7 * pulse, ry * 0.7 * pulse, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, rx * 0.75 * pulse, ry * 0.75 * pulse, spin * 2, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = 1;
 
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx * 0.5);
-    grad.addColorStop(0, portalColor.replace(')', ', 0.3)').replace('hsl', 'hsla').replace('rgb', 'rgba'));
-    grad.addColorStop(1, 'transparent');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx * 0.5 * pulse, ry * 0.5 * pulse, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (let i = 0; i < 6; i++) {
-      const angle = this.time * 0.03 + (i * Math.PI * 2) / 6;
-      ctx.fillStyle = '#fff';
-      ctx.globalAlpha = 0.7;
+    for (let i = 0; i < 8; i++) {
+      const angle = this.time * 0.04 + (i * Math.PI * 2) / 8;
+      const dist = rx * (0.5 + Math.sin(this.time * 0.08 + i) * 0.15) * pulse;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.beginPath();
-      ctx.arc(cx + Math.cos(angle) * rx * 0.65 * pulse, cy + Math.sin(angle) * ry * 0.65 * pulse, 2, 0, Math.PI * 2);
+      ctx.arc(cx + Math.cos(angle) * dist, cy + Math.sin(angle) * ry * dist / rx, 2.5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = 1;
     }
+
+    if (isExit) {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = 'bold 10px Orbitron, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('EXIT', cx, cy - 2);
+      ctx.fillText('FLIGHT', cx, cy + 10);
+    }
+
+    ctx.restore();
   }
 
   drawPlayer(rainbowHue) {

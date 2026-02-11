@@ -65,6 +65,19 @@ class SoundSystem {
     return this.musicEnabled;
   }
 
+  getMusicStep() {
+    return this.musicStep || 0;
+  }
+
+  getBPM() {
+    return this.currentTrack ? this.currentTrack.bpm : 128;
+  }
+
+  isOnBeat(subdivision) {
+    const s = subdivision || 4;
+    return (this.musicStep || 0) % s === 0;
+  }
+
   // ==================== SOUND EFFECTS ====================
 
   playJump() {
