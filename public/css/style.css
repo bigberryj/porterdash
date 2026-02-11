@@ -280,9 +280,9 @@ body {
   border-color: #0ff;
 }
 
-/* Death Overlay - click-through so "click anywhere to retry" hits canvas */
+/* Death Overlay - click overlay background to retry; content has buttons */
 #death-overlay {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 /* Shared overlay content */
@@ -313,10 +313,27 @@ body {
 
 #death-hint {
   font-family: 'Orbitron', sans-serif;
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.5);
-  margin: 0;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 4px 0;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
+#death-hint.death-hint { font-size: 1.05rem; }
+#death-hint-menu {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 0 16px 0;
+}
+.death-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  pointer-events: all;
+}
+.death-buttons .menu-btn { display: block; width: 100%; margin: 4px 0; }
+#death-content { pointer-events: auto; }
 
 #complete-content h2 {
   font-family: 'Orbitron', sans-serif;

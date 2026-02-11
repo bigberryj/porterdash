@@ -53,7 +53,12 @@
       <div id="death-content">
         <h2 id="death-title">CRASHED!</h2>
         <p id="death-progress"></p>
-        <p id="death-hint">Click anywhere to retry &middot; Escape or &#9776; for menu</p>
+        <p id="death-hint" class="death-hint">Press any key or click to retry</p>
+        <p id="death-hint-menu">Escape or &#9776; for menu</p>
+        <div id="death-buttons" class="death-buttons hidden">
+          <button class="menu-btn death-respawn-btn" id="respawn-checkpoint-btn">Respawn at checkpoint</button>
+          <button class="menu-btn" id="death-retry-btn">Full retry</button>
+        </div>
       </div>
     </div>
 

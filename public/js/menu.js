@@ -269,9 +269,22 @@ class MenuSystem {
     this.levelLabel.textContent = `Level ${levelIndex + 1}: ${LEVELS[levelIndex].name}`;
   }
 
-  showDeath(progress) {
+  showDeath(progress, engine) {
     this.deathOverlay.classList.remove('hidden');
     this.deathProgress.textContent = `Progress: ${Math.floor(progress * 100)}%`;
+    const deathButtons = document.getElementById('death-buttons');
+    const respawnBtn = document.getElementById('respawn-checkpoint-btn');
+    if (deathButtons && respawnBtn) {
+      if (engine && engine.hasCheckpoint && engine.hasCheckpoint()) {
+        deathButtons.classList.remove('hidden');
+      } else {
+        deathButtons.classList.add('hidden');
+      }
+    }
+  }
+
+  hideDeath() {
+    this.deathOverlay.classList.add('hidden');
   }
 
   showComplete(levelIndex, engine) {

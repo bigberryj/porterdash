@@ -57,6 +57,13 @@ class GameEngine {
     this.playerTrailParticles = [];
     this.screenShake = 0;
     this.doubleJumpFlash = 0;
+    this.MAX_DEATH_PARTICLES = 60;
+    this.MAX_TRAIL_PARTICLES = 80;
+    this.cameraLookAhead = 55;
+    this.deathSlowMoFrames = 0;
+    this.checkpointScrollX = null;
+    this.justLandedFromFlight = false;
+    this.deltaTime = 16;
 
     // Input
     this.jumpPressed = false;
@@ -116,6 +123,8 @@ class GameEngine {
     this.speedModifierEndScrollX = 0;
     this.collectedStars = new Set();
     this.collectiblesTotal = 0;
+    this.checkpointScrollX = null;
+    this.deathSlowMoFrames = 0;
 
     this.buildObstacles();
     this.buildGroundSegments();
@@ -369,7 +378,24 @@ class GameEngine {
     return this.collectiblesTotal || 0;
   }
 
+  hasCheckpoint() {
+    return this.checkpointScrollX != null && this.checkpointScrollX > 0;
+  }
+
+  getDrawScrollX() {
+    return this.scrollX + (this.cameraLookAhead || 0);
+  }
+
   update() {
+    if (this.state === 'dying') {
+      this.deathSlowMoFrames--;
+      const slowMult = 0.3;
+      this.scrollX += this.speed * slowMult;
+      this.player.x += (this.speed * slowMult) * 0.5;
+      if (this.deathSlowMoFrames <= 0) this.die();
+      this.bg.update(this.speed * slowMult, this.scrollX);
+      return;
+    }
     if (this.state !== 'playing') return;
 
     this.time++;
@@ -397,8 +423,13 @@ class GameEngine {
     }
     this.scrollX += effectiveSpeed;
 
+    // Checkpoints at 33% and 66% (keep furthest passed)
+    const progress = this.getProgress();
+    if (progress >= 0.66) this.checkpointScrollX = this.scrollX;
+    else if (progress >= 0.33) this.checkpointScrollX = this.scrollX;
+
     // Check level complete
-    if (this.getProgress() >= 1) {
+    if (progress >= 1) {
       this.state = 'complete';
       sound.playComplete();
       sound.stopMusic();
@@ -437,6 +468,8 @@ class GameEngine {
         if (overlapX && overlapY) {
           p.flightMode = false;
           p.vy = 0;
+          this.justLandedFromFlight = true;
+          this.screenShake = Math.min(15, (this.screenShake || 0) + 6);
           for (let i = 0; i < 12; i++) this.spawnPortalEffect(ox + ob.w / 2, ob.y + ob.h / 2);
           const exitEffect = this.level.portalExitEffect || 'flash';
           this.portalTransitionEffect = { type: exitEffect, progress: 0, duration: 40, isEnter: false };
@@ -447,6 +480,8 @@ class GameEngine {
     if (p.flightMode && this.scrollX >= p.flightEndScrollX) {
       p.flightMode = false;
       p.vy = 0;
+      this.justLandedFromFlight = true;
+      this.screenShake = Math.min(15, (this.screenShake || 0) + 6);
     }
 
     // Portal gravity trigger
@@ -549,6 +584,8 @@ class GameEngine {
           p.vy = 0;
           if (!wasOnGround) {
             this.spawnGroundParticles(p.x + p.width / 2, groundYAt, 3);
+            if (this.justLandedFromFlight) this.screenShake = Math.min(15, (this.screenShake || 0) + 6);
+            this.justLandedFromFlight = false;
             sound.playLand();
           }
           p.onGround = true;
@@ -633,7 +670,8 @@ class GameEngine {
 
       if (ob.type === 'flame_pit' || ob.type === 'flamethrower') {
         if (px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
-          this.die();
+          this.state = 'dying';
+          this.deathSlowMoFrames = 6;
           return;
         }
         continue;
@@ -642,6 +680,7 @@ class GameEngine {
       if (ob.type === 'collectible') {
         if (!this.collectedStars.has(ob.id) && px < ox + ob.w && px + pw > ox && py < ob.y + ob.h && py + ph > ob.y) {
           this.collectedStars.add(ob.id);
+          this.screenShake = Math.min(15, (this.screenShake || 0) + 4);
           if (typeof sound !== 'undefined' && sound.playCollect) sound.playCollect();
         }
         continue;
@@ -665,7 +704,8 @@ class GameEngine {
           const spikeMargin = ob.w * 0.22;
           if (px + pw > ox + spikeMargin && px < ox + ob.w - spikeMargin &&
               py + ph > ob.y + ob.h * 0.4) {
-            this.die();
+            this.state = 'dying';
+            this.deathSlowMoFrames = 6;
             return;
           }
         } else {
@@ -679,7 +719,8 @@ class GameEngine {
             p.vy = 0;
             p.y = ob.y + ob.h - margin;
           } else {
-            this.die();
+            this.state = 'dying';
+            this.deathSlowMoFrames = 6;
             return;
           }
         }
@@ -697,7 +738,9 @@ class GameEngine {
 
     const p = this.player;
     const colors = this.level.colors;
+    const maxDeath = this.MAX_DEATH_PARTICLES || 60;
     for (let i = 0; i < 20; i++) {
+      if (this.deathParticles.length >= maxDeath) break;
       this.deathParticles.push({
         x: p.x + p.width / 2,
         y: p.y + p.height / 2,
@@ -709,6 +752,39 @@ class GameEngine {
         decay: 0.015 + Math.random() * 0.02,
       });
     }
+  }
+
+  respawnAtCheckpoint() {
+    if (!this.hasCheckpoint()) return;
+    this.state = 'playing';
+    this.player.dead = false;
+    this.scrollX = this.checkpointScrollX;
+    this.player.x = this.displayWidth * 0.15;
+    this.player.y = this.groundY - this.player.height;
+    this.player.vy = 0;
+    this.player.onGround = true;
+    this.player.rotation = 0;
+    this.player.hasDoubleJumped = false;
+    this.player.flightMode = false;
+    this.player.flightEndScrollX = 0;
+    this.player.gravityFlipped = false;
+    this.player.gravityFlipEndScrollX = 0;
+    this.screenShake = 0;
+    this.deathParticles = [];
+    this.deathProgress = this.getProgress();
+    const cp = this.checkpointScrollX;
+    this.triggeredFlightPortals = new Set(
+      [...this.triggeredFlightPortals].filter((x) => x < cp)
+    );
+    this.triggeredGravityPortals = new Set(
+      [...this.triggeredGravityPortals].filter((x) => x < cp)
+    );
+    this.collectedStars = new Set(
+      [...this.collectedStars].filter((id) => {
+        const ob = this.obstacles.find((o) => o.type === 'collectible' && o.id === id);
+        return ob && ob.x < cp;
+      })
+    );
   }
 
   spawnGroundParticles(x, y, count) {
@@ -810,10 +886,11 @@ class GameEngine {
     }
 
     const rainbowHue = this.level && this.level.rainbow ? this.rainbowHue : undefined;
+    const drawScrollX = this.getDrawScrollX();
 
-    if (this.level) this.bg.draw(rainbowHue);
-    this.drawGround(rainbowHue);
-    this.drawObstacles(rainbowHue);
+    if (this.level) this.bg.draw(rainbowHue, drawScrollX);
+    this.drawGround(rainbowHue, drawScrollX);
+    this.drawObstacles(rainbowHue, drawScrollX);
 
     if (!this.player.dead) this.drawPlayer(rainbowHue);
 
@@ -822,12 +899,12 @@ class GameEngine {
     ctx.restore();
   }
 
-  drawGround(rainbowHue) {
+  drawGround(rainbowHue, drawScrollX) {
     const ctx = this.ctx;
     const w = this.displayWidth;
     const h = this.displayHeight;
     const colors = this.level ? this.level.colors : { ground: '#ff1a1a', groundAccent: '#cc0000' };
-    const scrollX = this.scrollX;
+    const scrollX = drawScrollX != null ? drawScrollX : this.scrollX;
 
     if (rainbowHue !== undefined) {
       ctx.fillStyle = `hsl(${rainbowHue}, 80%, 45%)`;
@@ -847,10 +924,69 @@ class GameEngine {
         ctx.fillRect(x1, this.groundY, x2 - x1, h - this.groundY);
         ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
       }
-      // Draw all solid ground as one continuous path per "run" (no segment boundaries = no shift at peaks)
+      // Shadow under terrain (darker offset fill)
+      const shadowOffset = 6;
+      const shadowColor = rainbowHue !== undefined
+        ? `hsla(${rainbowHue}, 60%, 15%, 0.35)` : (colors.groundAccent ? colors.groundAccent + '99' : 'rgba(0,0,0,0.4)');
+      ctx.save();
+      ctx.translate(0, shadowOffset);
+      ctx.fillStyle = shadowColor;
       let pathStarted = false;
       let runEndX = 0, runEndY = this.groundY;
       const segs = this.groundSegments;
+      for (let i = 0; i <= segs.length; i++) {
+        const seg = segs[i];
+        const isGap = seg && seg.type === 'gap';
+        const outOfView = seg && (seg.endX <= scrollX || seg.x >= scrollX + w);
+        if (isGap || outOfView || !seg) {
+          if (pathStarted) {
+            ctx.lineTo(runEndX, runEndY);
+            ctx.lineTo(runEndX, h);
+            ctx.closePath();
+            ctx.fill();
+            pathStarted = false;
+          }
+          if (seg) continue;
+          break;
+        }
+        const x1 = Math.max(0, seg.x - scrollX);
+        const x2 = Math.min(w, seg.endX - scrollX);
+        if (x2 <= x1) continue;
+        const segLen = seg.endX - seg.x;
+        if (!pathStarted) {
+          const startY = this.getGroundY(scrollX + x1) ?? this.groundY;
+          ctx.beginPath();
+          ctx.moveTo(x1, h);
+          ctx.lineTo(x1, startY);
+          pathStarted = true;
+        }
+        if (seg.type === 'curve' && seg.rise != null) {
+          const steps = Math.max(8, Math.floor((x2 - x1) / 4));
+          for (let s = 0; s <= steps; s++) {
+            const sx = x1 + (s / steps) * (x2 - x1);
+            const worldX = seg.x + (sx - x1);
+            const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
+            const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
+            ctx.lineTo(sx, sy);
+          }
+          runEndX = x2;
+          runEndY = seg.y0 - seg.rise * Math.sin(1 * Math.PI);
+        } else {
+          const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / segLen;
+          const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / segLen;
+          ctx.lineTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          runEndX = x2;
+          runEndY = y2;
+        }
+      }
+      ctx.restore();
+      ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
+
+      // Draw all solid ground as one continuous path per "run" (no segment boundaries = no shift at peaks)
+      pathStarted = false;
+      runEndX = 0;
+      runEndY = this.groundY;
       for (let i = 0; i <= segs.length; i++) {
         const seg = segs[i];
         const isGap = seg && seg.type === 'gap';
@@ -902,7 +1038,7 @@ class GameEngine {
     const glowColor = rainbowHue !== undefined
       ? `hsl(${rainbowHue}, 100%, 60%)` : colors.accent1;
     ctx.shadowColor = glowColor;
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = (this.deltaTime > 20 ? 7 : 15);
     ctx.strokeStyle = glowColor;
     ctx.lineWidth = 2;
     const hasSegments = this.groundSegments && this.groundSegments.length > 0;
@@ -996,12 +1132,13 @@ class GameEngine {
     }
   }
 
-  drawObstacles(rainbowHue) {
+  drawObstacles(rainbowHue, drawScrollX) {
     const ctx = this.ctx;
     const colors = this.level.colors;
+    const scrollForDraw = drawScrollX != null ? drawScrollX : this.scrollX;
 
     for (const ob of this.obstacles) {
-      const ox = ob.x - this.scrollX;
+      const ox = ob.x - scrollForDraw;
       if (ox + ob.w < -50 || ox > this.displayWidth + 50) continue;
 
       switch (ob.type) {

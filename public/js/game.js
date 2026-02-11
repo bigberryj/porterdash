@@ -12,6 +12,7 @@
   let currentLevel = 0;
   let demoScroll = 0;
   let demoHue = 0;
+  let lastFrameTime = performance.now();
 
   // ---- Sound init on first interaction ----
   function initSound() {
@@ -44,6 +45,11 @@
   document.addEventListener('keydown', (e) => {
     if (e.repeat) return;
     initSound();
+    if (currentScreen === 'dead') {
+      if (e.code === 'Escape') returnToMenu();
+      else retryLevel();
+      return;
+    }
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       onInputDown(e);
     }
@@ -155,6 +161,31 @@
     returnToMenu();
   });
 
+  const deathOverlay = document.getElementById('death-overlay');
+  if (deathOverlay) {
+    deathOverlay.addEventListener('click', (e) => {
+      if (currentScreen !== 'dead') return;
+      if (e.target.id === 'death-overlay') retryLevel();
+    });
+  }
+  const respawnCheckpointBtn = document.getElementById('respawn-checkpoint-btn');
+  if (respawnCheckpointBtn) {
+    respawnCheckpointBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (currentScreen !== 'dead' || !engine.hasCheckpoint()) return;
+      engine.respawnAtCheckpoint();
+      currentScreen = 'playing';
+      menu.hideDeath();
+    });
+  }
+  const deathRetryBtn = document.getElementById('death-retry-btn');
+  if (deathRetryBtn) {
+    deathRetryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (currentScreen === 'dead') retryLevel();
+    });
+  }
+
   // ---- Game Flow ----
 
   function startLevel(index) {
@@ -193,8 +224,11 @@
 
   // ---- Main Loop ----
 
-  function gameLoop() {
+  function gameLoop(now) {
     requestAnimationFrame(gameLoop);
+    const t = now != null ? now : performance.now();
+    engine.deltaTime = t - lastFrameTime;
+    lastFrameTime = t;
 
     if (currentScreen === 'menu' || currentScreen === 'levels') {
       if (!engine.level) engine.loadLevel(0);
@@ -211,7 +245,7 @@
 
       if (engine.state === 'dead') {
         currentScreen = 'dead';
-        menu.showDeath(engine.deathProgress);
+        menu.showDeath(engine.deathProgress, engine);
         menu.recordAttempt(currentLevel);
       } else if (engine.state === 'complete') {
         currentScreen = 'complete';

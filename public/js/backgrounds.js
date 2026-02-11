@@ -589,30 +589,47 @@ class BackgroundSystem {
 
   // ==================== DRAW ====================
 
-  draw(rainbowHue) {
+  draw(rainbowHue, drawScrollX) {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
     const colors = this.colors;
+    const theme = this.bgTheme;
 
-    // Background gradient
-    let grad;
+    // Background gradient – theme variety (stronger color shifts per level)
+    let grad = ctx.createLinearGradient(0, 0, 0, h);
     if (rainbowHue !== undefined) {
-      const c1 = `hsl(${rainbowHue}, 80%, 5%)`;
-      const c2 = `hsl(${rainbowHue + 30}, 80%, 12%)`;
-      grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, c1);
-      grad.addColorStop(1, c2);
+      grad.addColorStop(0, `hsl(${rainbowHue}, 80%, 5%)`);
+      grad.addColorStop(1, `hsl(${rainbowHue + 30}, 80%, 12%)`);
     } else {
-      grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, colors.bg1);
-      grad.addColorStop(1, colors.bg2);
+      const c1 = colors.bg1 || '#0a0a12';
+      const c2 = colors.bg2 || '#1a1a2e';
+      if (theme === 'city') {
+        grad.addColorStop(0, c1);
+        grad.addColorStop(0.4, this.hexToRgba(c2, 0.7));
+        grad.addColorStop(1, c2);
+      } else if (theme === 'space') {
+        grad.addColorStop(0, '#050510');
+        grad.addColorStop(0.3, c1);
+        grad.addColorStop(1, c2);
+      } else if (theme === 'cave' || theme === 'chaos') {
+        grad.addColorStop(0, '#000004');
+        grad.addColorStop(0.5, c1);
+        grad.addColorStop(1, c2);
+      } else if (theme === 'flash') {
+        grad.addColorStop(0, c1);
+        grad.addColorStop(0.6, this.hexToRgba(colors.accent1 || c2, 0.15));
+        grad.addColorStop(1, c2);
+      } else {
+        grad.addColorStop(0, c1);
+        grad.addColorStop(1, c2);
+      }
     }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    // Wallpaper layer (rich backdrop under all animations - sky, horizon, silhouettes)
-    this.drawWallpaper(rainbowHue);
+    // Wallpaper layer (rich backdrop – uses drawScrollX for camera look-ahead)
+    this.drawWallpaper(rainbowHue, drawScrollX);
 
     // Cave ceiling overlay
     if (this.bgTheme === 'cave' || this.bgTheme === 'chaos') {
@@ -693,13 +710,13 @@ class BackgroundSystem {
 
   // ==================== WALLPAPER (static backdrop under all layers) ====================
 
-  drawWallpaper(rainbowHue) {
+  drawWallpaper(rainbowHue, drawScrollX) {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
     const colors = this.colors;
-    const scrollX = this.scrollX || 0;
     const theme = this.bgTheme;
+    const scrollX = drawScrollX !== undefined ? drawScrollX : (this.scrollX || 0);
 
     // 1) Richer sky gradient overlay (adds depth - horizon glow)
     const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
@@ -733,7 +750,7 @@ class BackgroundSystem {
     ctx.fillRect(0, horizonY, w, bandH);
 
     // 3) Distant silhouettes (theme-based, very slow parallax)
-    const parallax = scrollX * 0.015;
+    const parallax = (scrollX || 0) * 0.015;
     ctx.globalAlpha = 0.4;
 
     if (theme === 'mountains' || theme === 'default' || !theme) {
