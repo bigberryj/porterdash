@@ -693,7 +693,7 @@ class GameEngine {
     this.deathProgress = this.getProgress();
     this.screenShake = 15;
     sound.playDeath();
-    sound.stopMusic();
+    // Keep music playing until user clicks to restart (stopMusic called in startLevel)
 
     const p = this.player;
     const colors = this.level.colors;
@@ -838,37 +838,64 @@ class GameEngine {
     if (!this.groundSegments || !this.groundSegments.length) {
       ctx.fillRect(0, this.groundY, w, h - this.groundY);
     } else {
+      // Draw gaps first (pits)
       for (const seg of this.groundSegments) {
-        if (seg.endX <= scrollX || seg.x >= scrollX + w) continue;
+        if (seg.type !== 'gap' || seg.endX <= scrollX || seg.x >= scrollX + w) continue;
         const x1 = Math.max(0, seg.x - scrollX);
         const x2 = Math.min(w, seg.endX - scrollX);
-        if (seg.type === 'gap') {
-          ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 50%, 8%)` : '#0a0a0a';
-          ctx.fillRect(x1, this.groundY, x2 - x1, h - this.groundY);
-          ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
-          continue;
+        ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 50%, 8%)` : '#0a0a0a';
+        ctx.fillRect(x1, this.groundY, x2 - x1, h - this.groundY);
+        ctx.fillStyle = rainbowHue !== undefined ? `hsl(${rainbowHue}, 80%, 45%)` : colors.ground;
+      }
+      // Draw all solid ground as one continuous path per "run" (no segment boundaries = no shift at peaks)
+      let pathStarted = false;
+      let runEndX = 0, runEndY = this.groundY;
+      const segs = this.groundSegments;
+      for (let i = 0; i <= segs.length; i++) {
+        const seg = segs[i];
+        const isGap = seg && seg.type === 'gap';
+        const outOfView = seg && (seg.endX <= scrollX || seg.x >= scrollX + w);
+        if (isGap || outOfView || !seg) {
+          if (pathStarted) {
+            ctx.lineTo(runEndX, runEndY);
+            ctx.lineTo(runEndX, h);
+            ctx.closePath();
+            ctx.fill();
+            pathStarted = false;
+          }
+          if (seg) continue;
+          break;
         }
-        ctx.beginPath();
-        ctx.moveTo(x1, h);
+        const x1 = Math.max(0, seg.x - scrollX);
+        const x2 = Math.min(w, seg.endX - scrollX);
+        if (x2 <= x1) continue;
+        const segLen = seg.endX - seg.x;
+        if (!pathStarted) {
+          const startY = this.getGroundY(scrollX + x1) ?? this.groundY;
+          ctx.beginPath();
+          ctx.moveTo(x1, h);
+          ctx.lineTo(x1, startY);
+          pathStarted = true;
+        }
         if (seg.type === 'curve' && seg.rise != null) {
-          const segLen = seg.endX - seg.x;
           const steps = Math.max(8, Math.floor((x2 - x1) / 4));
-          for (let i = 0; i <= steps; i++) {
-            const sx = x1 + (i / steps) * (x2 - x1);
+          for (let s = 0; s <= steps; s++) {
+            const sx = x1 + (s / steps) * (x2 - x1);
             const worldX = seg.x + (sx - x1);
-            const t = (worldX - seg.x) / segLen;
+            const t = Math.max(0, Math.min(1, (worldX - seg.x) / segLen));
             const sy = seg.y0 - seg.rise * Math.sin(t * Math.PI);
             ctx.lineTo(sx, sy);
           }
+          runEndX = x2;
+          runEndY = seg.y0 - seg.rise * Math.sin(1 * Math.PI);
         } else {
-          const y1 = seg.y0;
-          const y2 = seg.y1;
+          const y1 = seg.y0 + (seg.y1 - seg.y0) * (x1 - (seg.x - scrollX)) / segLen;
+          const y2 = seg.y0 + (seg.y1 - seg.y0) * (x2 - (seg.x - scrollX)) / segLen;
           ctx.lineTo(x1, y1);
           ctx.lineTo(x2, y2);
+          runEndX = x2;
+          runEndY = y2;
         }
-        ctx.lineTo(x2, h);
-        ctx.closePath();
-        ctx.fill();
       }
     }
 
