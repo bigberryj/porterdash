@@ -129,6 +129,11 @@ class GameEngine {
     this.checkpoint33Set = false;
     this.checkpoint66Set = false;
     this.deathSlowMoFrames = 0;
+    this.boardingTimer = 0;
+    this.takeoffTimer = 0;
+    this.shipBaseY = 0;
+    this.shipX = 0;
+    this.player.boardingScale = 1;
 
     this.buildObstacles();
     this.buildGroundSegments();
@@ -206,6 +211,8 @@ class GameEngine {
     const maxH = this.MAX_OBSTACLE_HEIGHT * bs;
     this.collectiblesTotal = 0;
 
+    // Collect portal zones to prevent overlapping obstacles
+    const portalZones = [];
     for (const ob of this.level.obstacles) {
       if (ob.type === 'portal_fly') {
         const flightBeats = ob.flightBeats || 45;
@@ -214,6 +221,10 @@ class GameEngine {
           start: ob.x + flightBeats,
           end: ob.x + flightBeats + safeBeats,
         });
+        // Portal entrance zone: portal is 2 beats wide, add 1 beat margin on each side
+        portalZones.push({ start: ob.x - 1, end: ob.x + 3 });
+        // Portal exit zone
+        portalZones.push({ start: ob.x + flightBeats - 1, end: ob.x + flightBeats + 3 });
       }
     }
 
@@ -221,6 +232,14 @@ class GameEngine {
       if (!engine.flightExitSafeZones || !engine.flightExitSafeZones.length) return false;
       const endX = beatX + (widthBeats || 1);
       for (const z of engine.flightExitSafeZones) {
+        if (beatX < z.end && endX > z.start) return true;
+      }
+      return false;
+    }
+
+    function isInPortalZone(beatX, widthBeats) {
+      const endX = beatX + (widthBeats || 1);
+      for (const z of portalZones) {
         if (beatX < z.end && endX > z.start) return true;
       }
       return false;
@@ -238,16 +257,21 @@ class GameEngine {
       const w = rawW;
       const h = Math.min(rawH, maxH);
 
+      // Skip non-portal obstacles that overlap with portal zones
+      const skipForPortal = ob.type !== 'portal' && ob.type !== 'portal_fly' &&
+        ob.type !== 'portal_gravity' && ob.type !== 'collectible' &&
+        isInPortalZone(beatX, ob.w || 1);
+
       switch (ob.type) {
         case 'spike':
-          if (isInFlightExitSafeZone(this, beatX, 1)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, 1)) break;
           this.obstacles.push({
             type: 'spike', x: baseX,
             y: this.groundY - bs, w: bs, h: bs, deadly: true,
           });
           break;
         case 'double_spike':
-          if (isInFlightExitSafeZone(this, beatX, 2)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, 2)) break;
           this.obstacles.push({
             type: 'spike', x: baseX, y: this.groundY - bs, w: bs, h: bs, deadly: true,
           });
@@ -256,7 +280,7 @@ class GameEngine {
           });
           break;
         case 'triple_spike':
-          if (isInFlightExitSafeZone(this, beatX, 3)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, 3)) break;
           for (let i = 0; i < 3; i++) {
             this.obstacles.push({
               type: 'spike', x: baseX + i * bs,
@@ -265,20 +289,21 @@ class GameEngine {
           }
           break;
         case 'block':
+          if (skipForPortal) break;
           this.obstacles.push({
             type: 'block', x: baseX,
             y: this.groundY - h, w, h, deadly: false,
           });
           break;
         case 'pillar':
-          // Capped at MAX_OBSTACLE_HEIGHT (2 blocks) so player can jump over
+          if (skipForPortal) break;
           this.obstacles.push({
             type: 'block', x: baseX,
             y: this.groundY - maxH, w: bs, h: maxH, deadly: false,
           });
           break;
         case 'spike_block':
-          if (isInFlightExitSafeZone(this, beatX, 2)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, 2)) break;
           this.obstacles.push({
             type: 'block', x: baseX,
             y: this.groundY - bs, w: bs * 2, h: bs, deadly: false,
@@ -304,28 +329,28 @@ class GameEngine {
           break;
         }
         case 'flame_pit':
-          if (isInFlightExitSafeZone(this, beatX, ob.w || 2)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, ob.w || 2)) break;
           this.obstacles.push({
             type: 'flame_pit', x: baseX,
             y: this.groundY - 50, w: (ob.w || 2) * bs, h: 55, deadly: true,
           });
           break;
         case 'flamethrower':
-          if (isInFlightExitSafeZone(this, beatX, ob.w || 1)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, ob.w || 1)) break;
           this.obstacles.push({
             type: 'flamethrower', x: baseX,
             y: -10, w: (ob.w || 1) * bs, h: 75, deadly: true,
           });
           break;
         case 'spike_up':
-          if (isInFlightExitSafeZone(this, beatX, 1)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, 1)) break;
           this.obstacles.push({
             type: 'spike_up', x: baseX,
             y: 0, w: bs, h: bs, deadly: true,
           });
           break;
         case 'moving_block': {
-          if (isInFlightExitSafeZone(this, beatX, ob.w || 1)) break;
+          if (skipForPortal || isInFlightExitSafeZone(this, beatX, ob.w || 1)) break;
           const amp = (ob.amp || 1) * bs;
           const period = (ob.period || 60) * 2;
           const axis = ob.axis || 'y';
@@ -337,6 +362,7 @@ class GameEngine {
           break;
         }
         case 'platform':
+          if (skipForPortal) break;
           this.obstacles.push({
             type: 'block', x: baseX,
             y: this.groundY - (ob.h || 1) * bs - (ob.gap || 1) * bs, w: (ob.w || 2) * bs, h: (ob.h || 1) * bs, deadly: false,
@@ -351,6 +377,7 @@ class GameEngine {
           });
           break;
         case 'speed_pad':
+          if (skipForPortal) break;
           this.obstacles.push({
             type: 'speed_pad', x: baseX,
             y: this.groundY - bs * 0.5, w: (ob.w || 1) * bs, h: bs, deadly: false,
@@ -366,6 +393,17 @@ class GameEngine {
           break;
       }
     }
+
+    // Add spaceship at end of level
+    const totalPx = (this.level.totalBeats + this.leadBeats) * bs;
+    this.obstacles.push({
+      type: 'spaceship',
+      x: totalPx - bs * 2,
+      y: this.groundY - bs * 4,
+      w: bs * 4,
+      h: bs * 4,
+      deadly: false,
+    });
   }
 
   getProgress() {
@@ -398,6 +436,50 @@ class GameEngine {
       this.player.x += (this.speed * slowMult) * 0.5;
       if (this.deathSlowMoFrames <= 0) this.die();
       this.bg.update(this.speed * slowMult, this.scrollX);
+      return;
+    }
+    // Spaceship boarding animation
+    if (this.state === 'boarding') {
+      this.time++;
+      this.boardingTimer++;
+      this.bg.update(0, this.scrollX);
+      // Move cube toward spaceship door
+      const shipScreenX = this.shipX - this.scrollX;
+      const targetX = shipScreenX + this.BLOCK_SIZE * 1.5;
+      const t = Math.min(1, this.boardingTimer / this.boardingDuration);
+      const ease = t * t * (3 - 2 * t); // smoothstep
+      this.player.x = this.player.x + (targetX - this.player.x) * 0.08;
+      this.player.y = this.groundY - this.player.height - ease * this.BLOCK_SIZE * 1.5;
+      // Shrink cube as it enters
+      if (t > 0.5) {
+        this.player.boardingScale = 1 - (t - 0.5) * 2; // 1.0 -> 0.0
+      }
+      if (this.boardingTimer >= this.boardingDuration) {
+        this.state = 'takeoff';
+        this.takeoffTimer = 0;
+        this.player.boardingScale = 0;
+      }
+      return;
+    }
+    if (this.state === 'takeoff') {
+      this.time++;
+      this.takeoffTimer++;
+      this.bg.update(0, this.scrollX);
+      // Ship rises and flies away
+      const tt = Math.min(1, this.takeoffTimer / this.takeoffDuration);
+      const accel = tt * tt * tt; // cubic acceleration
+      for (const ob of this.obstacles) {
+        if (ob.type === 'spaceship') {
+          ob.y = this.shipBaseY - accel * this.displayHeight * 1.5;
+          ob.thrustIntensity = Math.min(1, tt * 2);
+        }
+      }
+      this.screenShake = tt < 0.3 ? tt * 10 : Math.max(0, 3 - tt * 3);
+      if (this.takeoffTimer >= this.takeoffDuration) {
+        this.state = 'complete';
+        sound.stopMusic();
+        this.screenShake = 0;
+      }
       return;
     }
     if (this.state !== 'playing') return;
@@ -437,13 +519,22 @@ class GameEngine {
       this.checkpoint33Set = true;
     }
 
-    // Check level complete
-    if (progress >= 1) {
-      this.state = 'complete';
+    // Check level complete - trigger spaceship boarding sequence
+    if (progress >= 1 && this.state !== 'boarding' && this.state !== 'takeoff') {
+      this.state = 'boarding';
+      this.boardingTimer = 0;
+      this.boardingDuration = 60; // frames to enter the ship
+      this.takeoffTimer = 0;
+      this.takeoffDuration = 90; // frames for ship to take off
+      this.shipBaseY = this.groundY - this.BLOCK_SIZE * 4;
+      this.shipX = 0; // will be set from obstacle
+      for (const ob of this.obstacles) {
+        if (ob.type === 'spaceship') { this.shipX = ob.x; break; }
+      }
       sound.playComplete();
-      sound.stopMusic();
       return;
     }
+    if (this.state === 'boarding' || this.state === 'takeoff') return;
 
     const p = this.player;
     const bs = this.BLOCK_SIZE;
@@ -947,7 +1038,7 @@ class GameEngine {
     this.drawGround(rainbowHue, drawScrollX);
     this.drawObstacles(rainbowHue, drawScrollX);
 
-    if (!this.player.dead) this.drawPlayer(rainbowHue);
+    if (!this.player.dead && this.state !== 'takeoff' && this.state !== 'complete') this.drawPlayer(rainbowHue);
 
     this.drawEffects();
     if (this.portalTransitionEffect) this.drawPortalTransitionEffect();
@@ -1213,6 +1304,7 @@ class GameEngine {
         case 'flamethrower': this.drawFlamethrower(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'collectible': if (!this.collectedStars.has(ob.id)) this.drawCollectible(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
         case 'speed_pad': this.drawSpeedPad(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue); break;
+        case 'spaceship': this.drawSpaceship(ctx, ox, ob.y, ob.w, ob.h, colors, rainbowHue, ob.thrustIntensity || 0); break;
       }
     }
   }
@@ -1561,6 +1653,10 @@ class GameEngine {
     ctx.translate(p.x + p.width / 2, p.y + p.height / 2);
     ctx.rotate(p.rotation);
     if (p.gravityFlipped) ctx.rotate(Math.PI);
+    // Boarding scale (shrink as entering spaceship)
+    const bScale = p.boardingScale != null ? Math.max(0, p.boardingScale) : 1;
+    if (bScale < 1) ctx.scale(bScale, bScale);
+    if (bScale <= 0) { ctx.restore(); return; }
 
     const half = p.width / 2;
 
@@ -1692,6 +1788,171 @@ class GameEngine {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  drawSpaceship(ctx, x, y, w, h, colors, rainbowHue, thrustIntensity) {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const bs = this.BLOCK_SIZE;
+
+    ctx.save();
+
+    // Thrust / exhaust flames (drawn behind ship)
+    const thrust = thrustIntensity || 0;
+    const idleFlicker = 0.3 + Math.sin(this.time * 0.15) * 0.1;
+    const flameIntensity = Math.max(idleFlicker, thrust);
+    if (flameIntensity > 0.05) {
+      const flameH = h * (0.3 + flameIntensity * 1.2);
+      const flameW = w * 0.35;
+      const flicker = Math.sin(this.time * 0.3) * 4;
+      const flameBaseY = y + h;
+
+      // Outer flame
+      const outerGrad = ctx.createLinearGradient(cx, flameBaseY, cx, flameBaseY + flameH);
+      const flameColor1 = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 30}, 100%, 60%, ${0.9 * flameIntensity})`
+        : `rgba(255, 120, 0, ${0.9 * flameIntensity})`;
+      const flameColor2 = rainbowHue !== undefined
+        ? `hsla(${rainbowHue + 50}, 100%, 80%, ${0.6 * flameIntensity})`
+        : `rgba(255, 200, 50, ${0.6 * flameIntensity})`;
+      outerGrad.addColorStop(0, flameColor1);
+      outerGrad.addColorStop(0.5, flameColor2);
+      outerGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = outerGrad;
+      ctx.beginPath();
+      ctx.moveTo(cx - flameW + flicker, flameBaseY);
+      ctx.quadraticCurveTo(cx - flameW * 0.3, flameBaseY + flameH * 0.6, cx + flicker * 0.5, flameBaseY + flameH);
+      ctx.quadraticCurveTo(cx + flameW * 0.3, flameBaseY + flameH * 0.6, cx + flameW - flicker, flameBaseY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Inner flame (brighter core)
+      const innerGrad = ctx.createLinearGradient(cx, flameBaseY, cx, flameBaseY + flameH * 0.6);
+      innerGrad.addColorStop(0, `rgba(255, 255, 220, ${0.95 * flameIntensity})`);
+      innerGrad.addColorStop(1, 'rgba(255, 200, 100, 0)');
+      ctx.fillStyle = innerGrad;
+      ctx.beginPath();
+      ctx.moveTo(cx - flameW * 0.4, flameBaseY);
+      ctx.quadraticCurveTo(cx, flameBaseY + flameH * 0.4, cx + flicker * 0.3, flameBaseY + flameH * 0.6);
+      ctx.quadraticCurveTo(cx, flameBaseY + flameH * 0.3, cx + flameW * 0.4, flameBaseY);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Ship body - main hull (sleek rocket shape)
+    const hullColor = rainbowHue !== undefined
+      ? `hsl(${rainbowHue + 200}, 50%, 30%)` : '#2a3a5a';
+    const hullHighlight = rainbowHue !== undefined
+      ? `hsl(${rainbowHue + 200}, 60%, 50%)` : '#4a6a9a';
+    const accentColor = rainbowHue !== undefined
+      ? `hsl(${rainbowHue}, 100%, 60%)` : colors.accent1;
+
+    // Hull shape
+    ctx.fillStyle = hullColor;
+    ctx.beginPath();
+    ctx.moveTo(cx, y); // nose tip
+    ctx.quadraticCurveTo(cx + w * 0.35, y + h * 0.15, cx + w * 0.3, y + h * 0.5); // right upper curve
+    ctx.lineTo(cx + w * 0.3, y + h * 0.85); // right side
+    ctx.lineTo(cx + w * 0.45, y + h); // right fin tip
+    ctx.lineTo(cx + w * 0.2, y + h * 0.88); // right fin inner
+    ctx.lineTo(cx - w * 0.2, y + h * 0.88); // left fin inner
+    ctx.lineTo(cx - w * 0.45, y + h); // left fin tip
+    ctx.lineTo(cx - w * 0.3, y + h * 0.85); // left side
+    ctx.lineTo(cx - w * 0.3, y + h * 0.5); // left side upper
+    ctx.quadraticCurveTo(cx - w * 0.35, y + h * 0.15, cx, y); // left upper curve
+    ctx.closePath();
+    ctx.fill();
+
+    // Hull border glow
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = accentColor;
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Highlight stripe
+    ctx.fillStyle = hullHighlight;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.08, y + h * 0.12);
+    ctx.lineTo(cx + w * 0.08, y + h * 0.12);
+    ctx.lineTo(cx + w * 0.1, y + h * 0.85);
+    ctx.lineTo(cx - w * 0.1, y + h * 0.85);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cockpit window
+    const windowColor = rainbowHue !== undefined
+      ? `hsl(${rainbowHue + 180}, 80%, 65%)` : '#66ccff';
+    ctx.fillStyle = windowColor;
+    ctx.shadowColor = windowColor;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.28, w * 0.12, h * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Window glare
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(cx - w * 0.03, y + h * 0.25, w * 0.05, h * 0.04, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Side fins accent
+    ctx.fillStyle = accentColor;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(cx + w * 0.3, y + h * 0.75);
+    ctx.lineTo(cx + w * 0.45, y + h);
+    ctx.lineTo(cx + w * 0.2, y + h * 0.88);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.3, y + h * 0.75);
+    ctx.lineTo(cx - w * 0.45, y + h);
+    ctx.lineTo(cx - w * 0.2, y + h * 0.88);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Landing legs (only when grounded / not taking off)
+    if (thrust < 0.3) {
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 2;
+      const legSpread = w * 0.35;
+      const legY = y + h * 0.92;
+      const footY = y + h + bs * 0.3;
+      // Left leg
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.15, legY);
+      ctx.lineTo(cx - legSpread, footY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - legSpread - 4, footY);
+      ctx.lineTo(cx - legSpread + 6, footY);
+      ctx.stroke();
+      // Right leg
+      ctx.beginPath();
+      ctx.moveTo(cx + w * 0.15, legY);
+      ctx.lineTo(cx + legSpread, footY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + legSpread - 6, footY);
+      ctx.lineTo(cx + legSpread + 4, footY);
+      ctx.stroke();
+    }
+
+    // Pulsing glow around ship
+    const pulse = 0.5 + Math.sin(this.time * 0.06) * 0.3;
+    ctx.strokeStyle = accentColor;
+    ctx.globalAlpha = pulse * 0.3;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.55, h * 0.55, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
   }
 
   drawPortalTransitionEffect() {
